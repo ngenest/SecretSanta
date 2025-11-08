@@ -101,19 +101,17 @@ export default function ConfirmationScreen({
     [assignments]
   );
 
-  useEffect(() => {
-    const handleShortcut = (event) => {
-      if (event.repeat) return;
-      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        setOverlayCycle((cycle) => cycle + 1);
-        setShowOverlay(true);
-      }
-    };
+  const handleShare = (event) => {
+    const shareMessage = `${eventName} on ${eventDate}`;
 
-    window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
-  }, []);
+    if (event?.ctrlKey) {
+      event.preventDefault();
+      setOverlayCycle((cycle) => cycle + 1);
+      setShowOverlay(true);
+    }
+
+    navigator.clipboard?.writeText(shareMessage);
+  };
 
   useEffect(() => {
     if (!showOverlay) return;
@@ -164,7 +162,7 @@ export default function ConfirmationScreen({
           <button
             className="secondary"
             type="button"
-            onClick={() => navigator.clipboard?.writeText(`${eventName} on ${eventDate}`)}
+            onClick={handleShare}
           >
             Share Event
           </button>

@@ -14,6 +14,8 @@ const SCREENS = {
 const createDefaultEvent = () => ({
   name: '',
   date: '',
+  exchangeType: '',
+  otherGroupType: '',
   couples: Array.from({ length: 4 }, (_, idx) => ({
     id: idx,
     participants: [

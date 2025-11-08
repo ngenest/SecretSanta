@@ -153,7 +153,8 @@ label {
   font-size: 1.1rem;
 }
 
-input {
+input,
+select {
   padding: 0.75rem 1rem;
   border-radius: 999px;
   border: 2px solid #ffd700;
@@ -164,13 +165,16 @@ input {
   color: #333333;
 }
 
-input:focus {
+input:focus,
+select:focus {
   border-color: #00bfff;
   box-shadow: 0 0 10px rgba(0, 191, 255, 0.6);
 }
 
 input.has-error,
-.has-error input {
+.has-error input,
+select.has-error,
+.has-error select {
   border-color: #ff4d4d;
   animation: shake 0.3s ease;
 }

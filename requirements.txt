@@ -1,0 +1,2 @@
+# No external dependencies required
+# The Secret Santa application uses only Python standard library

@@ -26,8 +26,12 @@ export default function DrawAnimationScreen({ participants, onComplete }) {
 
   useEffect(() => {
     let timeout;
+    const startTime = Date.now();
+    const MIN_DISPLAY_DURATION = 5000;
     animationSequence(controls).then(() => {
-      timeout = setTimeout(onComplete, 2000);
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, MIN_DISPLAY_DURATION - elapsed);
+      timeout = setTimeout(onComplete, remaining);
     });
     return () => clearTimeout(timeout);
   }, [controls, onComplete]);

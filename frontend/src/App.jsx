@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import EventSetupScreen from './components/EventSetupScreen.jsx';
 import DrawAnimationScreen from './components/DrawAnimationScreen.jsx';
 import ConfirmationScreen from './components/ConfirmationScreen.jsx';
@@ -38,10 +38,24 @@ export default function App() {
   const [screenIndex, setScreenIndex] = useState(SCREENS.setup);
   const [eventData, setEventData] = useState(createDefaultEvent);
   const [assignments, setAssignments] = useState([]);
+  const [isAnimationComplete, setIsAnimationComplete] = useState(false);
+  const [areAssignmentsReady, setAreAssignmentsReady] = useState(false);
+
+  useEffect(() => {
+    if (
+      screenIndex === SCREENS.draw &&
+      isAnimationComplete &&
+      areAssignmentsReady
+    ) {
+      setScreenIndex(SCREENS.confirmation);
+    }
+  }, [areAssignmentsReady, isAnimationComplete, screenIndex]);
 
   const handleEventSubmit = async (payload) => {
     setEventData(payload);
     setScreenIndex(SCREENS.draw);
+    setIsAnimationComplete(false);
+    setAreAssignmentsReady(false);
     try {
       const response = await fetch('/api/draw', {
         method: 'POST',
@@ -53,10 +67,12 @@ export default function App() {
       }
       const data = await response.json();
       setAssignments(data.assignments);
-      setScreenIndex(SCREENS.confirmation);
+      setAreAssignmentsReady(true);
     } catch (error) {
       console.error(error);
       setScreenIndex(SCREENS.setup);
+      setIsAnimationComplete(false);
+      setAreAssignmentsReady(false);
       alert('Unable to complete draw. Please try again.');
     }
   };
@@ -65,6 +81,8 @@ export default function App() {
     setAssignments([]);
     setEventData(createDefaultEvent());
     setScreenIndex(SCREENS.setup);
+    setIsAnimationComplete(false);
+    setAreAssignmentsReady(false);
   };
 
   const participantList = eventData.couples.flatMap((couple) => couple.participants);
@@ -83,7 +101,7 @@ export default function App() {
         <DrawAnimationScreen
           eventName={eventData.name}
           participants={participantList}
-          onComplete={() => setScreenIndex(SCREENS.confirmation)}
+          onComplete={() => setIsAnimationComplete(true)}
         />
       )}
       {screenIndex === SCREENS.confirmation && (

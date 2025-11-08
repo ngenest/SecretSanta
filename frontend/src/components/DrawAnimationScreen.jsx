@@ -21,7 +21,7 @@ const animationSequence = async (controls) => {
   });
 };
 
-export default function DrawAnimationScreen({ participantNames, onComplete }) {
+export default function DrawAnimationScreen({ participants, onComplete }) {
   const controls = useAnimationControls();
 
   useEffect(() => {
@@ -43,14 +43,14 @@ export default function DrawAnimationScreen({ participantNames, onComplete }) {
       </motion.h1>
       <div className="draw-stage">
         <motion.div className="spinner" animate={controls}>
-          {participantNames.map((name, index) => (
+          {participants.map((participant, index) => (
             <motion.div
-              key={`${name}-${index}`}
+              key={participant.id}
               className="spinner-card"
               whileHover={{ scale: 1.05 }}
               transition={{ type: 'spring', stiffness: 200 }}
             >
-              {name || `Participant ${index + 1}`}
+              {participant.name || `Participant ${index + 1}`}
             </motion.div>
           ))}
         </motion.div>

@@ -11,6 +11,18 @@ const SCREENS = {
   confirmation: 2
 };
 
+const generateId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const createParticipant = () => ({
+  id: generateId(),
+  name: '',
+  email: '',
+  phone: ''
+});
+
 const createDefaultEvent = () => ({
   name: '',
   date: '',
@@ -18,10 +30,7 @@ const createDefaultEvent = () => ({
   otherGroupType: '',
   couples: Array.from({ length: 4 }, (_, idx) => ({
     id: idx,
-    participants: [
-      { name: '', email: '' },
-      { name: '', email: '' }
-    ]
+    participants: [createParticipant(), createParticipant()]
   }))
 });
 
@@ -58,9 +67,7 @@ export default function App() {
     setScreenIndex(SCREENS.setup);
   };
 
-  const participantNames = eventData.couples
-    .flatMap((couple) => couple.participants)
-    .map((participant) => participant.name || 'Participant');
+  const participantList = eventData.couples.flatMap((couple) => couple.participants);
 
   return (
     <div className={`app screen-${screenIndex}`}>
@@ -75,7 +82,7 @@ export default function App() {
       {screenIndex === SCREENS.draw && (
         <DrawAnimationScreen
           eventName={eventData.name}
-          participantNames={participantNames}
+          participants={participantList}
           onComplete={() => setScreenIndex(SCREENS.confirmation)}
         />
       )}
@@ -83,7 +90,7 @@ export default function App() {
         <ConfirmationScreen
           eventName={eventData.name}
           eventDate={eventData.date}
-          participants={eventData.couples.flatMap((c) => c.participants)}
+          participants={participantList}
           assignments={assignments}
           onRestart={handleRestart}
         />

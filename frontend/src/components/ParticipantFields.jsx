@@ -26,7 +26,7 @@ export default function ParticipantFields({ couple, index, onChange }) {
           >
             <div className="participant-grid">
               {couple.participants.map((participant, participantIndex) => (
-                <div key={participantIndex} className="participant-card">
+                <div key={participant.id ?? participantIndex} className="participant-card">
                   <div className="form-group">
                     <label htmlFor={`name-${index}-${participantIndex}`}>
                       Participant Name
@@ -58,8 +58,24 @@ export default function ParticipantFields({ couple, index, onChange }) {
                           email: event.target.value
                         })
                       }
-                      required
                     />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor={`phone-${index}-${participantIndex}`}>
+                      Phone Number
+                    </label>
+                    <input
+                      id={`phone-${index}-${participantIndex}`}
+                      type="tel"
+                      placeholder="+1 (555) 555-1234"
+                      value={participant.phone || ''}
+                      onChange={(event) =>
+                        onChange(index, participantIndex, {
+                          phone: event.target.value
+                        })
+                      }
+                    />
+                    <small className="input-help">Email or phone is required.</small>
                   </div>
                 </div>
               ))}

@@ -6,6 +6,18 @@ const defaultCouples = Array.from({ length: 4 }, (_, idx) => ({
   id: idx
 }));
 
+const generateId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const createParticipant = () => ({
+  id: generateId(),
+  name: '',
+  email: '',
+  phone: ''
+});
+
 const EXCHANGE_OPTIONS = [
   { value: 'family', label: 'Family' },
   { value: 'friends-and-family', label: 'Friends and Family' },
@@ -21,14 +33,19 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
   const [exchangeType, setExchangeType] = useState(initialEvent.exchangeType || '');
   const [otherGroupType, setOtherGroupType] = useState(initialEvent.otherGroupType || '');
   const [participants, setParticipants] = useState(
-    initialEvent.couples ||
+    (initialEvent.couples ||
       defaultCouples.map((couple) => ({
         ...couple,
-        participants: [
-          { name: '', email: '' },
-          { name: '', email: '' }
-        ]
+        participants: [createParticipant(), createParticipant()]
+      }))).map((couple) => ({
+      ...couple,
+      participants: couple.participants.map((participant) => ({
+        id: participant.id || generateId(),
+        name: participant.name || '',
+        email: participant.email || '',
+        phone: participant.phone || ''
       }))
+    }))
   );
   const [errors, setErrors] = useState({});
 
@@ -44,16 +61,29 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
     [participants]
   );
 
-  const emails = flatParticipants.map((p) => p.email.trim()).filter(Boolean);
+  const emails = flatParticipants
+    .map((p) => (p.email ?? '').trim())
+    .filter(Boolean)
+    .map((value) => value.toLowerCase());
+  const phones = flatParticipants
+    .map((p) => (p.phone ?? '').trim())
+    .filter(Boolean)
+    .map((value) => value.replace(/\D+/g, ''));
   const uniqueEmails = new Set(emails);
+  const uniquePhones = new Set(phones);
 
   const isValid =
     exchangeType.trim().length > 0 &&
     (exchangeType !== 'other' || otherGroupType.trim().length > 0) &&
     eventName.trim().length > 0 &&
     eventDate.trim().length > 0 &&
-    flatParticipants.every((p) => p.name.trim() && p.email.trim()) &&
-    emails.length === uniqueEmails.size;
+    flatParticipants.every(
+      (p) =>
+        (p.name ?? '').trim() &&
+        (((p.email ?? '').trim() || (p.phone ?? '').trim()))
+    ) &&
+    emails.length === uniqueEmails.size &&
+    phones.length === uniquePhones.size;
 
   const updateParticipant = (coupleIndex, participantIndex, updates) => {
     setErrors((prev) => ({ ...prev, [`participant-${coupleIndex}-${participantIndex}`]: undefined }));
@@ -79,9 +109,14 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
       if (!eventDate.trim()) nextErrors.eventDate = 'Event date is required';
       if (emails.length !== uniqueEmails.size)
         nextErrors.emails = 'Participant emails must be unique';
+      if (phones.length !== uniquePhones.size)
+        nextErrors.phones = 'Participant phone numbers must be unique';
       flatParticipants.forEach((p, index) => {
-        if (!p.name.trim() || !p.email.trim()) {
-          nextErrors[`participant-${index}`] = 'Name and email required';
+        const name = (p.name ?? '').trim();
+        const email = (p.email ?? '').trim();
+        const phone = (p.phone ?? '').trim();
+        if (!name || !(email || phone)) {
+          nextErrors[`participant-${index}`] = 'Name and contact required';
         }
       });
       setErrors(nextErrors);
@@ -95,7 +130,12 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
       otherGroupType: exchangeType === 'other' ? otherGroupType.trim() : '',
       couples: participants.map((couple) => ({
         id: couple.id,
-        participants: couple.participants.map(({ name, email }) => ({ name, email }))
+        participants: couple.participants.map(({ id, name, email, phone }) => ({
+          id,
+          name,
+          email,
+          phone
+        }))
       }))
     });
   };
@@ -214,6 +254,7 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
           ))}
         </div>
         {errors.emails && <p className="error email-error">{errors.emails}</p>}
+        {errors.phones && <p className="error email-error">{errors.phones}</p>}
         <button type="submit" className="primary" disabled={!isValid}>
           Start the Draw!
         </button>

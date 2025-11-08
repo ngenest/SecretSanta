@@ -18,13 +18,13 @@ export default function ConfirmationScreen({
       </motion.h1>
       <section className="confirmation-content">
         <p className="success-message">
-          Your Secret Santa matches have been drawn successfully! Emails sent to
-          all participants with their secret assignments.
+          Your Secret Santa matches have been drawn successfully! Email and SMS
+          notifications are on their merry way to every participant.
         </p>
         <div className="participant-list">
           {participants.map((participant, index) => (
             <motion.div
-              key={participant.email}
+              key={participant.id}
               className="participant-item"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}

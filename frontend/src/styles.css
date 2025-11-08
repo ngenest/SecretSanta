@@ -199,6 +199,12 @@ select.has-error,
   margin: 0;
 }
 
+.input-help {
+  font-size: 0.75rem;
+  color: rgba(0, 0, 0, 0.7);
+  margin-top: -0.25rem;
+}
+
 .primary,
 .secondary {
   border: none;

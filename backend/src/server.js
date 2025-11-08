@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
+import twilio from 'twilio';
+import { randomUUID } from 'crypto';
 
 dotenv.config();
 
@@ -28,6 +30,16 @@ const buildTransport = () => {
 
 const mailTransport = buildTransport();
 
+const buildTwilioClient = () => {
+  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
+  if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN) {
+    return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+  }
+  return null;
+};
+
+const twilioClient = buildTwilioClient();
+
 const validatePayload = (body) => {
   const errors = [];
   if (!body) {
@@ -42,23 +54,46 @@ const validatePayload = (body) => {
     errors.push('Exactly four couples are required');
 
   const emails = new Set();
+  const phones = new Set();
+  const ids = new Set();
   couples?.forEach((couple, coupleIndex) => {
     if (!couple?.participants || couple.participants.length !== 2) {
       errors.push(`Couple ${coupleIndex + 1} must have two participants`);
       return;
     }
     couple.participants.forEach((participant, participantIndex) => {
-      if (!participant.name) {
+      if (!participant?.name?.trim()) {
         errors.push(`Participant ${participantIndex + 1} in couple ${coupleIndex + 1} missing name`);
       }
-      if (!participant.email) {
-        errors.push(`Participant ${participantIndex + 1} in couple ${coupleIndex + 1} missing email`);
+      const email = participant?.email?.trim();
+      const phone = participant?.phone?.trim();
+      if (!email && !phone) {
+        errors.push(
+          `Participant ${participantIndex + 1} in couple ${coupleIndex + 1} must include an email or phone number`
+        );
       }
-      if (participant.email && emails.has(participant.email)) {
-        errors.push(`Duplicate email detected: ${participant.email}`);
+      if (participant?.id) {
+        if (ids.has(participant.id)) {
+          errors.push(`Duplicate participant id detected: ${participant.id}`);
+        } else {
+          ids.add(participant.id);
+        }
       }
-      if (participant.email) {
-        emails.add(participant.email);
+      if (email) {
+        const normalizedEmail = email.toLowerCase();
+        if (emails.has(normalizedEmail)) {
+          errors.push(`Duplicate email detected: ${email}`);
+        } else {
+          emails.add(normalizedEmail);
+        }
+      }
+      if (phone) {
+        const normalizedPhone = phone.replace(/\D+/g, '');
+        if (phones.has(normalizedPhone)) {
+          errors.push(`Duplicate phone number detected: ${phone}`);
+        } else {
+          phones.add(normalizedPhone);
+        }
       }
     });
   });
@@ -92,7 +127,10 @@ const derangeParticipants = (participants) => {
 };
 
 const sendEmails = async ({ eventName, eventDate, assignments }) => {
-  const promises = assignments.map(({ giver, receiver }) => {
+  const recipients = assignments.filter(({ giver }) => giver.email);
+  if (!recipients.length) return;
+
+  const promises = recipients.map(({ giver, receiver }) => {
     const message = {
       from: process.env.FROM_EMAIL || 'secretsanta@example.com',
       to: giver.email,
@@ -114,6 +152,34 @@ const sendEmails = async ({ eventName, eventDate, assignments }) => {
   await Promise.all(promises);
 };
 
+const sendSmsMessages = async ({ eventName, eventDate, assignments }) => {
+  if (!twilioClient) return;
+
+  const recipients = assignments.filter(({ giver }) => giver.phone);
+  if (!recipients.length) return;
+
+  const { TWILIO_MESSAGING_SERVICE_SID, TWILIO_FROM_NUMBER } = process.env;
+
+  if (!TWILIO_MESSAGING_SERVICE_SID && !TWILIO_FROM_NUMBER) {
+    console.warn('Twilio configured but no messaging service SID or from number provided. Skipping SMS send.');
+    return;
+  }
+
+  const senderConfig = TWILIO_MESSAGING_SERVICE_SID
+    ? { messagingServiceSid: TWILIO_MESSAGING_SERVICE_SID }
+    : { from: TWILIO_FROM_NUMBER };
+
+  const promises = recipients.map(({ giver, receiver }) =>
+    twilioClient.messages.create({
+      ...senderConfig,
+      to: giver.phone,
+      body: `Secret Santa: You'll be gifting ${receiver.name} for ${eventName} on ${eventDate}. Keep it secret!`
+    })
+  );
+
+  await Promise.all(promises);
+};
+
 app.post('/api/draw', async (req, res) => {
   const validationErrors = validatePayload(req.body);
   if (validationErrors.length) {
@@ -124,21 +190,32 @@ app.post('/api/draw', async (req, res) => {
   const participants = couples.flatMap((couple, coupleIndex) =>
     couple.participants.map((participant) => ({
       ...participant,
+      id: participant.id || randomUUID(),
+      name: participant.name?.trim() || '',
+      email: participant.email?.trim() || '',
+      phone: participant.phone?.trim() || '',
       coupleId: coupleIndex
     }))
   );
 
   try {
     const matches = derangeParticipants(participants);
-    await sendEmails({
+    const messagePayload = {
       eventName: name,
       eventDate: date,
       assignments: matches
-    });
+    };
+
+    await Promise.all([sendEmails(messagePayload), sendSmsMessages(messagePayload)]);
 
     const responseAssignments = matches.map(({ giver, receiver }) => ({
-      giver: { name: giver.name, email: giver.email },
-      receiver: { name: receiver.name }
+      giver: {
+        id: giver.id,
+        name: giver.name,
+        email: giver.email || null,
+        phone: giver.phone || null
+      },
+      receiver: { id: receiver.id, name: receiver.name }
     }));
 
     res.json({ assignments: responseAssignments });

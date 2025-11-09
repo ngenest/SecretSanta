@@ -137,6 +137,14 @@ export default function AcknowledgementLanding() {
 
   const eventTypeLabel = ackData.eventTypeLabel || resolveEventTypeLabel(ackData.exchangeType, ackData.otherGroupType);
   const formattedDate = formatDate(ackData.eventDate);
+  const rulesLines = useMemo(
+    () =>
+      (ackData.secretSantaRules || '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean),
+    [ackData.secretSantaRules]
+  );
 
   return (
     <div className="ack-landing success-state">
@@ -175,6 +183,16 @@ export default function AcknowledgementLanding() {
             <strong>Event type:</strong> {eventTypeLabel}
           </p>
         </section>
+        {rulesLines.length > 0 && (
+          <section className="ack-rules">
+            <h2>Secret Santa Rules</h2>
+            <ul>
+              {rulesLines.map((line, index) => (
+                <li key={index}>{line}</li>
+              ))}
+            </ul>
+          </section>
+        )}
         <p className="ack-footer">
           Now go get this unforgettable present and contact your organizer if there is any problem with the draw.
         </p>

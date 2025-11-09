@@ -7,20 +7,11 @@ const listVariants = {
   exit: { opacity: 0, scale: 0.96, transition: { duration: 0.2 } }
 };
 
-export default function IndividualParticipants({
-  participants,
-  onChange,
-  onAddParticipant,
-  onRemoveParticipant,
-  minParticipants = 3
-}) {
+export default function IndividualParticipants({ participants, onChange }) {
   return (
     <div className="individuals-section">
       <div className="individuals-header">
         <h3>Participants</h3>
-        <button type="button" className="secondary add-participant" onClick={onAddParticipant}>
-          + Add Participant
-        </button>
       </div>
       <div className="individuals-grid">
         <AnimatePresence initial={false}>
@@ -37,9 +28,7 @@ export default function IndividualParticipants({
                 participant={participant}
                 index={index}
                 idPrefix="individual"
-                showRemove={participants.length > minParticipants}
-                onRemove={() => onRemoveParticipant(index)}
-                removeLabel="Remove"
+                showRemove={false}
                 onChange={(updates) => onChange(index, updates)}
                 autoFocus={index === participants.length - 1}
               />

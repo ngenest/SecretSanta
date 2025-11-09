@@ -28,10 +28,18 @@ const createDefaultEvent = () => ({
   date: '',
   exchangeType: '',
   otherGroupType: '',
+  drawMode: 'couples',
+  organizer: {
+    name: '',
+    email: '',
+    phone: ''
+  },
+  secretSantaRules: '',
   couples: Array.from({ length: 4 }, (_, idx) => ({
     id: idx,
     participants: [createParticipant(), createParticipant()]
-  }))
+  })),
+  individuals: Array.from({ length: 6 }, () => createParticipant())
 });
 
 export default function App() {
@@ -102,7 +110,12 @@ export default function App() {
     setAreAssignmentsReady(false);
   };
 
-  const participantList = eventData.couples.flatMap((couple) => couple.participants);
+  const participantList =
+    eventData.drawMode === 'individuals'
+      ? Array.isArray(eventData.individuals)
+        ? eventData.individuals
+        : []
+      : (eventData.couples || []).flatMap((couple) => couple.participants || []);
 
   return (
     <div className={`app screen-${screenIndex}`}>
@@ -127,6 +140,8 @@ export default function App() {
         <ConfirmationScreen
           eventName={eventData.name}
           eventDate={eventData.date}
+          drawMode={eventData.drawMode}
+          secretSantaRules={eventData.secretSantaRules}
           participants={participantList}
           assignments={assignments}
           onRestart={handleRestart}

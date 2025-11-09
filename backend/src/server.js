@@ -74,6 +74,66 @@ const getExchangeLabel = (exchangeType, otherGroupType = '') => {
   return EXCHANGE_LABELS[exchangeType] || 'Secret Santa Event';
 };
 
+const escapeHtml = (unsafe = '') =>
+  unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+const formatRulesHtml = (rules = '') => escapeHtml(rules).replace(/\r?\n/g, '<br />');
+
+const collapseWhitespace = (value = '') => value.replace(/\s+/g, ' ').trim();
+
+const formatRulesForSms = (rules = '') => {
+  const collapsed = collapseWhitespace(rules);
+  if (!collapsed) return '';
+  return collapsed.length > 200 ? `${collapsed.slice(0, 197)}...` : collapsed;
+};
+
+const formatDateOnly = (value) => {
+  if (!value) return 'Unknown date';
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    }).format(new Date(value));
+  } catch (error) {
+    return value;
+  }
+};
+
+const formatDateTime = (value) => {
+  if (!value) return 'Unknown date';
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(new Date(value));
+  } catch (error) {
+    return value;
+  }
+};
+
+const getTwilioSenderConfig = () => {
+  const { TWILIO_MESSAGING_SERVICE_SID, TWILIO_FROM_NUMBER } = process.env;
+  if (!TWILIO_MESSAGING_SERVICE_SID && !TWILIO_FROM_NUMBER) {
+    console.warn(
+      'Twilio configured but no messaging service SID or from number provided. Skipping SMS send.'
+    );
+    return null;
+  }
+
+  return TWILIO_MESSAGING_SERVICE_SID
+    ? { messagingServiceSid: TWILIO_MESSAGING_SERVICE_SID }
+    : { from: TWILIO_FROM_NUMBER };
+};
+
 const createAckToken = (payload) => {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', ACK_KEY, iv);
@@ -95,19 +155,37 @@ const decodeAckToken = (token) => {
 };
 
 const registerAcknowledgements = ({ matches, event }) => {
-  const { name: eventName, date: eventDate, exchangeType, otherGroupType } = event;
+  const {
+    name: eventName,
+    date: eventDate,
+    exchangeType,
+    otherGroupType,
+    secretSantaRules = '',
+    organizer = {},
+    drawMode = 'couples',
+    drawDate
+  } = event;
+  const drawDateValue = drawDate || new Date().toISOString();
+  const organizerName = organizer.name?.trim() || '';
+  const organizerEmail = organizer.email?.trim() || '';
+  const organizerPhone = organizer.phone?.trim() || '';
+
   return matches.map(({ giver, receiver }) => {
+    const issuedAt = new Date().toISOString();
     const tokenPayload = {
       tokenId: randomUUID(),
       eventName,
       eventDate,
       exchangeType,
       otherGroupType,
+      drawMode,
       giverId: giver.id,
       giverName: giver.name,
+      giverEmail: giver.email,
+      giverPhone: giver.phone,
       receiverId: receiver.id,
       receiverName: receiver.name,
-      issuedAt: new Date().toISOString()
+      issuedAt
     };
     const token = createAckToken(tokenPayload);
     const acknowledgementUrl = `${ACK_BASE_URL}?payload=${encodeURIComponent(token)}`;
@@ -115,7 +193,12 @@ const registerAcknowledgements = ({ matches, event }) => {
       ...tokenPayload,
       acknowledged: false,
       acknowledgementUrl,
-      eventTypeLabel: getExchangeLabel(exchangeType, otherGroupType)
+      eventTypeLabel: getExchangeLabel(exchangeType, otherGroupType),
+      secretSantaRules,
+      organizerName,
+      organizerEmail,
+      organizerPhone,
+      drawDate: drawDateValue
     });
     return {
       giverId: giver.id,
@@ -132,68 +215,123 @@ const validatePayload = (body) => {
     return errors;
   }
 
-  const { name, date, couples } = body;
-  if (!name || typeof name !== 'string') errors.push('Event name is required');
-  if (!date || typeof date !== 'string') errors.push('Event date is required');
-  if (!Array.isArray(couples) || couples.length !== 4)
-    errors.push('Exactly four couples are required');
+  const {
+    name,
+    date,
+    drawMode,
+    couples,
+    individuals,
+    organizer
+  } = body;
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    errors.push('Event name is required');
+  }
+
+  if (!date || typeof date !== 'string' || !date.trim()) {
+    errors.push('Event date is required');
+  }
+
+  if (!drawMode || (drawMode !== 'couples' && drawMode !== 'individuals')) {
+    errors.push('Draw mode must be either couples or individuals');
+  }
+
+  const organizerName = organizer?.name?.trim();
+  const organizerEmail = organizer?.email?.trim();
+  const organizerPhone = organizer?.phone?.trim();
+
+  if (!organizerName) {
+    errors.push('Organizer name is required');
+  }
+
+  if (!organizerEmail && !organizerPhone) {
+    errors.push('Organizer email or phone number is required');
+  }
 
   const emails = new Set();
   const phones = new Set();
   const ids = new Set();
-  couples?.forEach((couple, coupleIndex) => {
-    if (!couple?.participants || couple.participants.length !== 2) {
-      errors.push(`Couple ${coupleIndex + 1} must have two participants`);
-      return;
+
+  const registerParticipant = (participant, contextLabel) => {
+    if (!participant?.name?.trim()) {
+      errors.push(`${contextLabel} missing name`);
     }
-    couple.participants.forEach((participant, participantIndex) => {
-      if (!participant?.name?.trim()) {
-        errors.push(`Participant ${participantIndex + 1} in couple ${coupleIndex + 1} missing name`);
+    const email = participant?.email?.trim();
+    const phone = participant?.phone?.trim();
+    if (!email && !phone) {
+      errors.push(`${contextLabel} must include an email or phone number`);
+    }
+    if (participant?.id) {
+      if (ids.has(participant.id)) {
+        errors.push(`Duplicate participant id detected: ${participant.id}`);
+      } else {
+        ids.add(participant.id);
       }
-      const email = participant?.email?.trim();
-      const phone = participant?.phone?.trim();
-      if (!email && !phone) {
-        errors.push(
-          `Participant ${participantIndex + 1} in couple ${coupleIndex + 1} must include an email or phone number`
-        );
+    }
+    if (email) {
+      const normalizedEmail = email.toLowerCase();
+      if (emails.has(normalizedEmail)) {
+        errors.push(`Duplicate email detected: ${email}`);
+      } else {
+        emails.add(normalizedEmail);
       }
-      if (participant?.id) {
-        if (ids.has(participant.id)) {
-          errors.push(`Duplicate participant id detected: ${participant.id}`);
-        } else {
-          ids.add(participant.id);
-        }
+    }
+    if (phone) {
+      const normalizedPhone = phone.replace(/\D+/g, '');
+      if (phones.has(normalizedPhone)) {
+        errors.push(`Duplicate phone number detected: ${phone}`);
+      } else {
+        phones.add(normalizedPhone);
       }
-      if (email) {
-        const normalizedEmail = email.toLowerCase();
-        if (emails.has(normalizedEmail)) {
-          errors.push(`Duplicate email detected: ${email}`);
-        } else {
-          emails.add(normalizedEmail);
-        }
+    }
+  };
+
+  if (!drawMode || drawMode === 'couples') {
+    if (!Array.isArray(couples) || couples.length !== 4) {
+      errors.push('Exactly four couples are required');
+    }
+
+    couples?.forEach((couple, coupleIndex) => {
+      const pair = couple?.participants;
+      if (!Array.isArray(pair) || pair.length !== 2) {
+        errors.push(`Couple ${coupleIndex + 1} must have two participants`);
+        return;
       }
-      if (phone) {
-        const normalizedPhone = phone.replace(/\D+/g, '');
-        if (phones.has(normalizedPhone)) {
-          errors.push(`Duplicate phone number detected: ${phone}`);
-        } else {
-          phones.add(normalizedPhone);
-        }
-      }
+      pair.forEach((participant, participantIndex) =>
+        registerParticipant(
+          participant,
+          `Participant ${participantIndex + 1} in couple ${coupleIndex + 1}`
+        )
+      );
     });
-  });
+  }
+
+  if (drawMode === 'individuals') {
+    if (!Array.isArray(individuals) || individuals.length < 3) {
+      errors.push('At least three participants are required for an individual draw');
+    }
+
+    individuals?.forEach((participant, index) =>
+      registerParticipant(participant, `Participant ${index + 1}`)
+    );
+  }
 
   return errors;
 };
 
-const derangeParticipants = (participants) => {
+const derangeParticipants = (participants, { preventSameGroup = false } = {}) => {
   const givers = participants.map((p, index) => ({ ...p, index }));
   let receivers = [...givers];
   let attempts = 0;
   const maxAttempts = 5000;
 
-  const isValid = (giver, receiver) =>
-    giver.index !== receiver.index && giver.coupleId !== receiver.coupleId;
+  const isValid = (giver, receiver) => {
+    if (giver.index === receiver.index) return false;
+    if (preventSameGroup && giver.groupId !== undefined && giver.groupId === receiver.groupId) {
+      return false;
+    }
+    return true;
+  };
 
   while (attempts < maxAttempts) {
     attempts += 1;
@@ -211,22 +349,40 @@ const derangeParticipants = (participants) => {
   throw new Error('Unable to generate valid Secret Santa pairings after many attempts.');
 };
 
-const sendEmails = async ({ eventName, eventDate, assignments, ackLinks }) => {
+const sendEmails = async ({
+  eventName,
+  eventDate,
+  eventTypeLabel,
+  secretSantaRules,
+  assignments,
+  ackLinks
+}) => {
   const recipients = assignments.filter(({ giver }) => giver.email);
   if (!recipients.length) return;
 
   const promises = recipients.map(({ giver, receiver }) => {
     const acknowledgementUrl = ackLinks.get(giver.id);
+    const rulesHtml = secretSantaRules
+      ? `
+          <div style="margin-top:18px;padding:16px;border-radius:12px;background:rgba(255,255,255,0.8);color:#4a148c;line-height:1.4;">
+            <h3 style="margin-top:0;color:#c2185b;">Secret Santa Rules</h3>
+            <p style="margin:0;">${formatRulesHtml(secretSantaRules)}</p>
+          </div>`
+      : '';
+    const rulesText = secretSantaRules
+      ? `\nSecret Santa Rules:\n${secretSantaRules}\n`
+      : '';
     const message = {
       from: process.env.FROM_EMAIL || 'secretsanta@example.com',
       to: giver.email,
       subject: `Secret Santa Match for ${eventName}`,
-      text: `Ho ho ho! You will be gifting ${receiver.name} for ${eventName} on ${eventDate}. Keep it secret!\n\nAt the present time, nobody else but you knows who you were matched with. Keep the magic alive, keep it a secret!\n\nYou need to click the following link to confirm that you have received and accept the result of your draw:\n${acknowledgementUrl}`,
+      text: `Ho ho ho! You will be gifting ${receiver.name} for ${eventName} on ${eventDate}. Event type: ${eventTypeLabel}. Keep it secret!\n\nAt the present time, nobody else but you knows who you were matched with. Keep the magic alive, keep it a secret!\n\nYou need to click the following link to confirm that you have received and accept the result of your draw:\n${acknowledgementUrl}${rulesText}`,
       html: `
         <div style="font-family: Arial, sans-serif;">
           <h2 style="color:#d32f2f;">Secret Santa Assignment</h2>
           <p>Hi ${giver.name},</p>
           <p>You drew <strong>${receiver.name}</strong> for <strong>${eventName}</strong> on <strong>${eventDate}</strong>.</p>
+          <p style="margin:8px 0;color:#c2185b;"><strong>Event type:</strong> ${eventTypeLabel}</p>
           <p style="margin-top:16px;">At the present time, nobody else but you knows who you were matched with. Keep the magic alive, keep it a secret!</p>
           <p style="margin-bottom:16px;">You need to click the following link to confirm that you have received and accept the result of your draw:</p>
           <p style="text-align:center;">
@@ -236,6 +392,7 @@ const sendEmails = async ({ eventName, eventDate, assignments, ackLinks }) => {
           </p>
           <p style="font-size:12px;color:#555;">If the button does not work, copy and paste this link into your browser: <br/><a href="${acknowledgementUrl}">${acknowledgementUrl}</a></p>
           <p>Get something merry and bright!</p>
+          ${rulesHtml}
         </div>
       `
     };
@@ -246,32 +403,151 @@ const sendEmails = async ({ eventName, eventDate, assignments, ackLinks }) => {
   await Promise.all(promises);
 };
 
-const sendSmsMessages = async ({ eventName, eventDate, assignments, ackLinks }) => {
+const sendSmsMessages = async ({
+  eventName,
+  eventDate,
+  eventTypeLabel,
+  secretSantaRules,
+  assignments,
+  ackLinks
+}) => {
   if (!twilioClient) return;
 
   const recipients = assignments.filter(({ giver }) => giver.phone);
   if (!recipients.length) return;
 
-  const { TWILIO_MESSAGING_SERVICE_SID, TWILIO_FROM_NUMBER } = process.env;
-
-  if (!TWILIO_MESSAGING_SERVICE_SID && !TWILIO_FROM_NUMBER) {
-    console.warn('Twilio configured but no messaging service SID or from number provided. Skipping SMS send.');
+  const senderConfig = getTwilioSenderConfig();
+  if (!senderConfig) {
     return;
   }
-
-  const senderConfig = TWILIO_MESSAGING_SERVICE_SID
-    ? { messagingServiceSid: TWILIO_MESSAGING_SERVICE_SID }
-    : { from: TWILIO_FROM_NUMBER };
 
   const promises = recipients.map(({ giver, receiver }) =>
     twilioClient.messages.create({
       ...senderConfig,
       to: giver.phone,
-      body: `Secret Santa: You'll be gifting ${receiver.name} for ${eventName} on ${eventDate}. Keep it secret! At the present time, nobody else but you knows who you were matched with. Keep the magic alive, keep it a secret! You need to click the following link to confirm that you have received and accept the result of your draw: ${ackLinks.get(giver.id)}`
+      body: `Secret Santa: You'll be gifting ${receiver.name} for ${eventName} on ${eventDate} (${eventTypeLabel}). Keep it secret! Confirm: ${ackLinks.get(giver.id)}${
+        secretSantaRules ? ` Rules: ${formatRulesForSms(secretSantaRules)}` : ''
+      }`
     })
   );
 
   await Promise.all(promises);
+};
+
+const sendOrganizerEmailNotification = async ({
+  organizer,
+  eventName,
+  eventDate,
+  eventTypeLabel,
+  drawDate,
+  participant
+}) => {
+  const email = organizer.email?.trim();
+  if (!email) return;
+
+  const organizerName = organizer.name?.trim() || 'Organizer';
+  const contactSummary = [participant.email, participant.phone]
+    .map((value) => (value || '').trim())
+    .filter(Boolean)
+    .join(' • ');
+  const formattedContacts = contactSummary || 'No additional contact information provided';
+
+  const message = {
+    from: process.env.FROM_EMAIL || 'secretsanta@example.com',
+    to: email,
+    subject: `Participant confirmation for ${eventName}`,
+    text: `Hello ${organizerName},\n${participant.name} (${formattedContacts}) confirmed their Secret Santa match for ${eventName}.\nDraw date: ${formatDateTime(drawDate)}\nGift exchange: ${formatDateOnly(eventDate)}\nEvent type: ${eventTypeLabel}\n`,
+    html: `
+      <div style="font-family: Arial, sans-serif; color:#1f2933;">
+        <h2 style="color:#c2185b;">Secret Santa Confirmation</h2>
+        <p>Hello ${escapeHtml(organizerName)},</p>
+        <p><strong>${escapeHtml(participant.name)}</strong> (${escapeHtml(
+          formattedContacts
+        )}) confirmed their Secret Santa match for <strong>${escapeHtml(eventName)}</strong>.</p>
+        <ul style="padding-left:1.25rem; line-height:1.6;">
+          <li><strong>Draw date:</strong> ${escapeHtml(formatDateTime(drawDate))}</li>
+          <li><strong>Gift exchange:</strong> ${escapeHtml(formatDateOnly(eventDate))}</li>
+          <li><strong>Event type:</strong> ${escapeHtml(eventTypeLabel)}</li>
+        </ul>
+        <p style="margin-top:16px;">Keep the festive spirit alive and reach out if anything needs your attention.</p>
+      </div>
+    `
+  };
+
+  await mailTransport.sendMail(message);
+};
+
+const sendOrganizerSmsNotification = async ({
+  organizer,
+  eventName,
+  eventDate,
+  eventTypeLabel,
+  drawDate,
+  participant
+}) => {
+  if (!twilioClient) return;
+  const phone = organizer.phone?.trim();
+  if (!phone) return;
+
+  const senderConfig = getTwilioSenderConfig();
+  if (!senderConfig) {
+    return;
+  }
+
+  const contactParts = [participant.email, participant.phone]
+    .map((value) => (value || '').trim())
+    .filter(Boolean);
+  const contactSummary = contactParts.length ? contactParts.join(' | ') : 'no contact info';
+
+  await twilioClient.messages.create({
+    ...senderConfig,
+    to: phone,
+    body: collapseWhitespace(
+      `Secret Santa: ${participant.name} (${contactSummary}) confirmed for ${eventName}. Draw: ${formatDateTime(
+        drawDate
+      )}. Exchange: ${formatDateOnly(eventDate)}. Type: ${eventTypeLabel}.`
+    )
+  });
+};
+
+const notifyOrganizerOfAcknowledgement = async ({
+  organizer,
+  eventName,
+  eventDate,
+  eventTypeLabel,
+  drawDate,
+  participant
+}) => {
+  const tasks = [];
+  if (organizer?.email?.trim()) {
+    tasks.push(
+      sendOrganizerEmailNotification({
+        organizer,
+        eventName,
+        eventDate,
+        eventTypeLabel,
+        drawDate,
+        participant
+      })
+    );
+  }
+
+  if (organizer?.phone?.trim()) {
+    tasks.push(
+      sendOrganizerSmsNotification({
+        organizer,
+        eventName,
+        eventDate,
+        eventTypeLabel,
+        drawDate,
+        participant
+      })
+    );
+  }
+
+  if (!tasks.length) return;
+
+  await Promise.all(tasks);
 };
 
 app.post('/api/draw', async (req, res) => {
@@ -280,27 +556,58 @@ app.post('/api/draw', async (req, res) => {
     return res.status(400).json({ errors: validationErrors });
   }
 
-  const { name, date, couples } = req.body;
-  const participants = couples.flatMap((couple, coupleIndex) =>
-    couple.participants.map((participant) => ({
-      ...participant,
-      id: participant.id || randomUUID(),
-      name: participant.name?.trim() || '',
-      email: participant.email?.trim() || '',
-      phone: participant.phone?.trim() || '',
-      coupleId: coupleIndex
-    }))
-  );
+  const {
+    name,
+    date,
+    drawMode,
+    couples = [],
+    individuals = [],
+    organizer = {},
+    exchangeType,
+    otherGroupType,
+    secretSantaRules: rawRules = ''
+  } = req.body;
+  const trimmedRules = rawRules?.trim() || '';
+  const normalizedOrganizer = {
+    name: organizer?.name?.trim() || '',
+    email: organizer?.email?.trim() || '',
+    phone: organizer?.phone?.trim() || ''
+  };
+
+  const participants =
+    drawMode === 'individuals'
+      ? individuals.map((participant) => ({
+          id: participant.id || randomUUID(),
+          name: participant.name?.trim() || '',
+          email: participant.email?.trim() || '',
+          phone: participant.phone?.trim() || ''
+        }))
+      : couples.flatMap((couple, coupleIndex) =>
+          couple.participants.map((participant) => ({
+            id: participant.id || randomUUID(),
+            name: participant.name?.trim() || '',
+            email: participant.email?.trim() || '',
+            phone: participant.phone?.trim() || '',
+            groupId: coupleIndex
+          }))
+        );
 
   try {
-    const matches = derangeParticipants(participants);
+    const matches = derangeParticipants(participants, {
+      preventSameGroup: drawMode !== 'individuals'
+    });
+    const drawDate = new Date().toISOString();
     const acknowledgementRecords = registerAcknowledgements({
       matches,
       event: {
         name,
         date,
-        exchangeType: req.body.exchangeType,
-        otherGroupType: req.body.otherGroupType
+        exchangeType,
+        otherGroupType,
+        secretSantaRules: trimmedRules,
+        organizer: normalizedOrganizer,
+        drawMode: drawMode || 'couples',
+        drawDate
       }
     });
     const ackLinks = new Map(
@@ -309,6 +616,8 @@ app.post('/api/draw', async (req, res) => {
     const messagePayload = {
       eventName: name,
       eventDate: date,
+      eventTypeLabel: getExchangeLabel(exchangeType, otherGroupType),
+      secretSantaRules: trimmedRules,
       assignments: matches,
       ackLinks
     };
@@ -326,14 +635,18 @@ app.post('/api/draw', async (req, res) => {
       acknowledgementUrl: ackLinks.get(giver.id)
     }));
 
-    res.json({ assignments: responseAssignments });
+    res.json({
+      assignments: responseAssignments,
+      drawDate,
+      drawMode: drawMode || 'couples'
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to generate Secret Santa assignments.' });
   }
 });
 
-app.post('/api/acknowledgements', (req, res) => {
+app.post('/api/acknowledgements', async (req, res) => {
   const token = req.body?.token;
   if (!token) {
     return res.status(400).json({ error: 'Acknowledgement token is required.' });
@@ -352,17 +665,41 @@ app.post('/api/acknowledgements', (req, res) => {
       acknowledgementsStore.set(token, stored);
     }
 
+    try {
+      await notifyOrganizerOfAcknowledgement({
+        organizer: {
+          name: stored.organizerName,
+          email: stored.organizerEmail,
+          phone: stored.organizerPhone
+        },
+        eventName: stored.eventName,
+        eventDate: stored.eventDate,
+        eventTypeLabel: stored.eventTypeLabel || getExchangeLabel(stored.exchangeType, stored.otherGroupType),
+        drawDate: stored.drawDate,
+        participant: {
+          name: stored.giverName,
+          email: stored.giverEmail,
+          phone: stored.giverPhone
+        }
+      });
+    } catch (notifyError) {
+      console.error('Failed to notify organizer of acknowledgement', notifyError);
+    }
+
     res.json({
       eventName: stored.eventName,
       eventDate: stored.eventDate,
       exchangeType: stored.exchangeType,
       otherGroupType: stored.otherGroupType,
       eventTypeLabel: stored.eventTypeLabel,
+      drawMode: stored.drawMode,
+      drawDate: stored.drawDate,
       giverId: stored.giverId,
       giverName: stored.giverName,
       receiverId: stored.receiverId,
       receiverName: stored.receiverName,
-      acknowledgedAt: stored.acknowledgedAt
+      acknowledgedAt: stored.acknowledgedAt,
+      secretSantaRules: stored.secretSantaRules || ''
     });
   } catch (error) {
     console.error('Failed to verify acknowledgement token', error);

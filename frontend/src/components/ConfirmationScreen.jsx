@@ -89,6 +89,8 @@ const orbVariants = {
 export default function ConfirmationScreen({
   eventName,
   eventDate,
+  drawMode = 'couples',
+  secretSantaRules = '',
   participants,
   assignments = [],
   onRestart
@@ -123,6 +125,16 @@ export default function ConfirmationScreen({
     return () => clearTimeout(timeout);
   }, [showOverlay, overlayCycle]);
 
+  const drawSummary =
+    drawMode === 'individuals'
+      ? 'Assignments are secret – everyone was matched randomly under no restrictions!'
+      : 'Assignments are secret – no one draws their partner!';
+
+  const rulesLines = (secretSantaRules || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
   return (
     <main className="screen screen-confirmation">
       <motion.h1
@@ -152,9 +164,17 @@ export default function ConfirmationScreen({
             </motion.div>
           ))}
         </div>
-        <p className="privacy-note">
-          Assignments are secret – no one draws their spouse!
-        </p>
+        <p className="privacy-note">{drawSummary}</p>
+        {rulesLines.length > 0 && (
+          <div className="rules-summary">
+            <h3>Secret Santa Rules</h3>
+            <ul>
+              {rulesLines.map((line, index) => (
+                <li key={index}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="button-row">
           <button className="primary" type="button" onClick={onRestart}>
             Done

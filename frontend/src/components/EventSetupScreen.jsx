@@ -6,6 +6,106 @@ import IndividualParticipants from './IndividualParticipants.jsx';
 const DEFAULT_COUPLE_COUNT = 4;
 const MIN_INDIVIDUALS = 3;
 const DEFAULT_INDIVIDUALS_COUNT = 6;
+const MIN_COUPLE_PARTICIPANTS = 2;
+
+const PARTICIPANT_ANIMATIONS = [
+  {
+    initial: { opacity: 0, y: 28, scale: 0.95 },
+    animate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.45, ease: 'easeOut' }
+    },
+    exit: { opacity: 0, y: -28, scale: 0.92, transition: { duration: 0.3, ease: 'easeIn' } }
+  },
+  {
+    initial: { opacity: 0, x: -32 },
+    animate: { opacity: 1, x: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+    exit: { opacity: 0, x: 32, transition: { duration: 0.28, ease: 'easeIn' } }
+  },
+  {
+    initial: { opacity: 0, x: 32 },
+    animate: { opacity: 1, x: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+    exit: { opacity: 0, x: -32, transition: { duration: 0.28, ease: 'easeIn' } }
+  },
+  {
+    initial: { opacity: 0, scale: 0.85, rotate: -6 },
+    animate: {
+      opacity: 1,
+      scale: 1,
+      rotate: 0,
+      transition: { duration: 0.5, ease: [0.22, 0.61, 0.36, 1] }
+    },
+    exit: {
+      opacity: 0,
+      scale: 0.9,
+      rotate: 6,
+      transition: { duration: 0.32, ease: 'easeIn' }
+    }
+  },
+  {
+    initial: { opacity: 0, y: -24, scale: 0.96 },
+    animate: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { duration: 0.42, ease: [0.25, 0.8, 0.25, 1] }
+    },
+    exit: { opacity: 0, y: 24, scale: 0.94, transition: { duration: 0.28, ease: 'easeIn' } }
+  },
+  {
+    initial: { opacity: 0, scale: 1.1 },
+    animate: {
+      opacity: 1,
+      scale: 1,
+      transition: { duration: 0.38, ease: [0.34, 1.56, 0.64, 1] }
+    },
+    exit: {
+      opacity: 0,
+      scale: 0.92,
+      transition: { duration: 0.3, ease: [0.36, -0.01, 0.66, -0.56] }
+    }
+  },
+  {
+    initial: { opacity: 0, rotateX: -90 },
+    animate: {
+      opacity: 1,
+      rotateX: 0,
+      transition: { duration: 0.5, ease: [0.42, 0, 0.58, 1] }
+    },
+    exit: { opacity: 0, rotateX: 90, transition: { duration: 0.32, ease: 'easeIn' } }
+  },
+  {
+    initial: { opacity: 0, rotateY: 45, scale: 0.9 },
+    animate: {
+      opacity: 1,
+      rotateY: 0,
+      scale: 1,
+      transition: { duration: 0.48, ease: [0.33, 1, 0.68, 1] }
+    },
+    exit: { opacity: 0, rotateY: -45, scale: 0.92, transition: { duration: 0.3, ease: 'easeIn' } }
+  },
+  {
+    initial: { opacity: 0, y: 0, scale: 0.7 },
+    animate: {
+      opacity: 1,
+      scale: 1,
+      transition: { duration: 0.46, ease: [0.2, 0.8, 0.2, 1] }
+    },
+    exit: { opacity: 0, scale: 1.15, transition: { duration: 0.28, ease: 'easeIn' } }
+  },
+  {
+    initial: { opacity: 0, y: 36, rotate: 8 },
+    animate: {
+      opacity: 1,
+      y: 0,
+      rotate: 0,
+      transition: { duration: 0.44, ease: [0.16, 1, 0.3, 1] }
+    },
+    exit: { opacity: 0, y: -36, rotate: -6, transition: { duration: 0.32, ease: 'easeIn' } }
+  }
+];
 
 const generateId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -92,12 +192,26 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
     return normalized;
   });
 
+  const [participantsAnimationKey, setParticipantsAnimationKey] = useState(0);
+  const [participantsAnimationIndex, setParticipantsAnimationIndex] = useState(() =>
+    Math.floor(Math.random() * PARTICIPANT_ANIMATIONS.length)
+  );
+
   useEffect(() => {
     if (!eventDate) {
       const year = new Date().getFullYear();
       setEventDate(`${year}-12-24`);
     }
   }, [eventDate]);
+
+  const participantCount = drawMode === 'individuals' ? individuals.length : couples.length * 2;
+  const [participantCountInput, setParticipantCountInput] = useState(() =>
+    String(participantCount)
+  );
+
+  useEffect(() => {
+    setParticipantCountInput(String(participantCount));
+  }, [participantCount]);
 
   const activeParticipants = useMemo(
     () =>
@@ -155,6 +269,73 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
       phones: undefined
     }));
 
+  const triggerParticipantsRefresh = () => {
+    setParticipantsAnimationKey((prev) => prev + 1);
+    setParticipantsAnimationIndex((prevIndex) => {
+      let nextIndex = Math.floor(Math.random() * PARTICIPANT_ANIMATIONS.length);
+      if (nextIndex === prevIndex) {
+        nextIndex = (nextIndex + 1) % PARTICIPANT_ANIMATIONS.length;
+      }
+      return nextIndex;
+    });
+  };
+
+  const updateIndividualsCount = (targetCount) => {
+    clearParticipantErrors();
+    const sanitized = Number.isFinite(targetCount) ? Math.floor(targetCount) : individuals.length;
+    const normalizedCount = Math.max(MIN_INDIVIDUALS, sanitized);
+    if (normalizedCount === individuals.length) {
+      return normalizedCount;
+    }
+
+    const next = individuals.slice(0, normalizedCount);
+    while (next.length < normalizedCount) {
+      next.push(createParticipant());
+    }
+
+    setIndividuals(next);
+    triggerParticipantsRefresh();
+    return normalizedCount;
+  };
+
+  const updateCoupleParticipantsCount = (targetCount) => {
+    clearParticipantErrors();
+    const sanitized = Number.isFinite(targetCount)
+      ? Math.floor(targetCount)
+      : couples.length * 2;
+    let normalizedCount = Math.max(MIN_COUPLE_PARTICIPANTS, sanitized);
+    if (normalizedCount % 2 !== 0) {
+      normalizedCount += 1;
+    }
+
+    const desiredCoupleCount = normalizedCount / 2;
+
+    if (desiredCoupleCount !== couples.length) {
+      const nextCouples = couples.slice(0, desiredCoupleCount).map((couple) => ({
+        ...couple,
+        participants: couple.participants.slice(0, 2)
+      }));
+
+      while (nextCouples.length < desiredCoupleCount) {
+        nextCouples.push({
+          id: generateId(),
+          participants: [createParticipant(), createParticipant()]
+        });
+      }
+
+      nextCouples.forEach((couple) => {
+        while (couple.participants.length < 2) {
+          couple.participants.push(createParticipant());
+        }
+      });
+
+      setCouples(nextCouples);
+      triggerParticipantsRefresh();
+    }
+
+    return normalizedCount;
+  };
+
   const handleCoupleParticipantChange = (coupleIndex, participantIndex, updates) => {
     clearParticipantErrors();
     setCouples((prev) =>
@@ -175,21 +356,6 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
         idx === participantIndex ? { ...participant, ...updates } : participant
       )
     );
-  };
-
-  const handleAddIndividual = () => {
-    clearParticipantErrors();
-    setIndividuals((prev) => [...prev, createParticipant()]);
-  };
-
-  const handleRemoveIndividual = (participantIndex) => {
-    clearParticipantErrors();
-    setIndividuals((prev) => {
-      if (prev.length <= MIN_INDIVIDUALS) {
-        return prev;
-      }
-      return prev.filter((_, idx) => idx !== participantIndex);
-    });
   };
 
   const handleSubmit = (event) => {
@@ -302,6 +468,7 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
   const handleDrawModeChange = (value) => {
     clearParticipantErrors();
     setDrawMode(value);
+    triggerParticipantsRefresh();
     if (value === 'individuals' && individuals.length < MIN_INDIVIDUALS) {
       setIndividuals((prev) => {
         const next = [...prev];
@@ -312,6 +479,57 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
       });
     }
   };
+
+  const handleParticipantCountDecrease = () => {
+    if (drawMode === 'individuals') {
+      const nextCount = updateIndividualsCount(individuals.length - 1);
+      setParticipantCountInput(String(nextCount));
+    } else {
+      const nextCount = updateCoupleParticipantsCount(couples.length * 2 - 2);
+      setParticipantCountInput(String(nextCount));
+    }
+  };
+
+  const handleParticipantCountIncrease = () => {
+    if (drawMode === 'individuals') {
+      const nextCount = updateIndividualsCount(individuals.length + 1);
+      setParticipantCountInput(String(nextCount));
+    } else {
+      const nextCount = updateCoupleParticipantsCount(couples.length * 2 + 2);
+      setParticipantCountInput(String(nextCount));
+    }
+  };
+
+  const commitParticipantCountInput = () => {
+    const parsed = Number.parseInt(participantCountInput, 10);
+    const nextCount =
+      drawMode === 'individuals'
+        ? updateIndividualsCount(Number.isNaN(parsed) ? individuals.length : parsed)
+        : updateCoupleParticipantsCount(Number.isNaN(parsed) ? couples.length * 2 : parsed);
+    setParticipantCountInput(String(nextCount));
+  };
+
+  const handleParticipantCountInputChange = (event) => {
+    setParticipantCountInput(event.target.value);
+  };
+
+  const handleParticipantCountInputBlur = () => {
+    commitParticipantCountInput();
+  };
+
+  const handleParticipantCountInputKeyDown = (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commitParticipantCountInput();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setParticipantCountInput(String(participantCount));
+    }
+  };
+
+  const minParticipantCount = drawMode === 'individuals' ? MIN_INDIVIDUALS : MIN_COUPLE_PARTICIPANTS;
+  const participantStep = drawMode === 'individuals' ? 1 : 2;
+  const canDecreaseParticipants = participantCount > minParticipantCount;
 
   const showTooltip = () => setIsTooltipOpen(true);
   const hideTooltip = () => setIsTooltipOpen(false);
@@ -493,26 +711,73 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
             </label>
           </div>
         </div>
-        {drawMode === 'couples' ? (
-          <div className="accordion">
-            {couples.map((couple, idx) => (
-              <ParticipantFields
-                key={couple.id}
-                index={idx}
-                couple={couple}
-                onChange={handleCoupleParticipantChange}
-              />
-            ))}
+        <div className="form-group participant-count-group">
+          <label htmlFor="participantCount">Number of participants</label>
+          <div className="count-stepper">
+            <button
+              type="button"
+              className="stepper-button"
+              onClick={handleParticipantCountDecrease}
+              disabled={!canDecreaseParticipants}
+              aria-label="Decrease participants"
+            >
+              −
+            </button>
+            <input
+              id="participantCount"
+              name="participantCount"
+              type="number"
+              inputMode="numeric"
+              min={minParticipantCount}
+              step={participantStep}
+              value={participantCountInput}
+              onChange={handleParticipantCountInputChange}
+              onBlur={handleParticipantCountInputBlur}
+              onKeyDown={handleParticipantCountInputKeyDown}
+            />
+            <button
+              type="button"
+              className="stepper-button"
+              onClick={handleParticipantCountIncrease}
+              aria-label="Increase participants"
+            >
+              +
+            </button>
           </div>
-        ) : (
-          <IndividualParticipants
-            participants={individuals}
-            onChange={handleIndividualChange}
-            onAddParticipant={handleAddIndividual}
-            onRemoveParticipant={handleRemoveIndividual}
-            minParticipants={MIN_INDIVIDUALS}
-          />
-        )}
+          <small className="input-help participant-count-hint">
+            {drawMode === 'couples'
+              ? 'Couple draws adjust in pairs so everyone brings a partner.'
+              : 'Individual draws adjust one participant at a time.'}
+          </small>
+        </div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`${drawMode}-${participantsAnimationKey}`}
+            className="participants-section-wrapper"
+            variants={PARTICIPANT_ANIMATIONS[participantsAnimationIndex]}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            {drawMode === 'couples' ? (
+              <div className="accordion">
+                {couples.map((couple, idx) => (
+                  <ParticipantFields
+                    key={couple.id}
+                    index={idx}
+                    couple={couple}
+                    onChange={handleCoupleParticipantChange}
+                  />
+                ))}
+              </div>
+            ) : (
+              <IndividualParticipants
+                participants={individuals}
+                onChange={handleIndividualChange}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
         {errors.participants && <p className="error email-error">{errors.participants}</p>}
         {errors.emails && <p className="error email-error">{errors.emails}</p>}
         {errors.phones && <p className="error email-error">{errors.phones}</p>}

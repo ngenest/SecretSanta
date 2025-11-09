@@ -3,7 +3,13 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
-import { randomUUID } from 'crypto';
+import {
+  randomUUID,
+  randomBytes,
+  createCipheriv,
+  createDecipheriv,
+  createHash
+} from 'crypto';
 
 dotenv.config();
 
@@ -39,6 +45,85 @@ const buildTwilioClient = () => {
 };
 
 const twilioClient = buildTwilioClient();
+
+const ACK_SECRET = process.env.ACK_SECRET || process.env.ACKNOWLEDGEMENT_SECRET || 'development-secret';
+const ACK_BASE_URL_SOURCE =
+  process.env.ACK_BASE_URL || process.env.APP_BASE_URL || 'http://localhost:5173';
+const ACK_BASE_URL =
+  ACK_BASE_URL_SOURCE.endsWith('/acknowledgement')
+    ? ACK_BASE_URL_SOURCE
+    : `${ACK_BASE_URL_SOURCE.replace(/\/$/, '')}/acknowledgement`;
+
+const ACK_KEY = createHash('sha256').update(ACK_SECRET).digest();
+
+const acknowledgementsStore = new Map();
+
+const EXCHANGE_LABELS = {
+  family: 'Family',
+  'friends-and-family': 'Friends and Family',
+  colleagues: 'Colleagues',
+  neighbors: 'Neighbors',
+  community: 'Community',
+  other: 'Other group'
+};
+
+const getExchangeLabel = (exchangeType, otherGroupType = '') => {
+  if (exchangeType === 'other') {
+    return otherGroupType?.trim() || 'Other group';
+  }
+  return EXCHANGE_LABELS[exchangeType] || 'Secret Santa Event';
+};
+
+const createAckToken = (payload) => {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', ACK_KEY, iv);
+  const serialized = Buffer.from(JSON.stringify(payload), 'utf8');
+  const encrypted = Buffer.concat([cipher.update(serialized), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return Buffer.concat([iv, authTag, encrypted]).toString('base64url');
+};
+
+const decodeAckToken = (token) => {
+  const buffer = Buffer.from(token, 'base64url');
+  const iv = buffer.subarray(0, 12);
+  const authTag = buffer.subarray(12, 28);
+  const ciphertext = buffer.subarray(28);
+  const decipher = createDecipheriv('aes-256-gcm', ACK_KEY, iv);
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return JSON.parse(decrypted.toString('utf8'));
+};
+
+const registerAcknowledgements = ({ matches, event }) => {
+  const { name: eventName, date: eventDate, exchangeType, otherGroupType } = event;
+  return matches.map(({ giver, receiver }) => {
+    const tokenPayload = {
+      tokenId: randomUUID(),
+      eventName,
+      eventDate,
+      exchangeType,
+      otherGroupType,
+      giverId: giver.id,
+      giverName: giver.name,
+      receiverId: receiver.id,
+      receiverName: receiver.name,
+      issuedAt: new Date().toISOString()
+    };
+    const token = createAckToken(tokenPayload);
+    const acknowledgementUrl = `${ACK_BASE_URL}?payload=${encodeURIComponent(token)}`;
+    acknowledgementsStore.set(token, {
+      ...tokenPayload,
+      acknowledged: false,
+      acknowledgementUrl,
+      eventTypeLabel: getExchangeLabel(exchangeType, otherGroupType)
+    });
+    return {
+      giverId: giver.id,
+      acknowledgementUrl,
+      token
+    };
+  });
+};
 
 const validatePayload = (body) => {
   const errors = [];
@@ -126,21 +211,30 @@ const derangeParticipants = (participants) => {
   throw new Error('Unable to generate valid Secret Santa pairings after many attempts.');
 };
 
-const sendEmails = async ({ eventName, eventDate, assignments }) => {
+const sendEmails = async ({ eventName, eventDate, assignments, ackLinks }) => {
   const recipients = assignments.filter(({ giver }) => giver.email);
   if (!recipients.length) return;
 
   const promises = recipients.map(({ giver, receiver }) => {
+    const acknowledgementUrl = ackLinks.get(giver.id);
     const message = {
       from: process.env.FROM_EMAIL || 'secretsanta@example.com',
       to: giver.email,
       subject: `Secret Santa Match for ${eventName}`,
-      text: `Ho ho ho! You will be gifting ${receiver.name} for ${eventName} on ${eventDate}. Keep it secret!`,
+      text: `Ho ho ho! You will be gifting ${receiver.name} for ${eventName} on ${eventDate}. Keep it secret!\n\nAt the present time, nobody else but you knows who you were matched with. Keep the magic alive, keep it a secret!\n\nYou need to click the following link to confirm that you have received and accept the result of your draw:\n${acknowledgementUrl}`,
       html: `
         <div style="font-family: Arial, sans-serif;">
           <h2 style="color:#d32f2f;">Secret Santa Assignment</h2>
           <p>Hi ${giver.name},</p>
           <p>You drew <strong>${receiver.name}</strong> for <strong>${eventName}</strong> on <strong>${eventDate}</strong>.</p>
+          <p style="margin-top:16px;">At the present time, nobody else but you knows who you were matched with. Keep the magic alive, keep it a secret!</p>
+          <p style="margin-bottom:16px;">You need to click the following link to confirm that you have received and accept the result of your draw:</p>
+          <p style="text-align:center;">
+            <a href="${acknowledgementUrl}" style="background:#c2185b;color:#fff;padding:12px 18px;border-radius:6px;text-decoration:none;display:inline-block;">
+              Confirm Your Secret Santa Draw
+            </a>
+          </p>
+          <p style="font-size:12px;color:#555;">If the button does not work, copy and paste this link into your browser: <br/><a href="${acknowledgementUrl}">${acknowledgementUrl}</a></p>
           <p>Get something merry and bright!</p>
         </div>
       `
@@ -152,7 +246,7 @@ const sendEmails = async ({ eventName, eventDate, assignments }) => {
   await Promise.all(promises);
 };
 
-const sendSmsMessages = async ({ eventName, eventDate, assignments }) => {
+const sendSmsMessages = async ({ eventName, eventDate, assignments, ackLinks }) => {
   if (!twilioClient) return;
 
   const recipients = assignments.filter(({ giver }) => giver.phone);
@@ -173,7 +267,7 @@ const sendSmsMessages = async ({ eventName, eventDate, assignments }) => {
     twilioClient.messages.create({
       ...senderConfig,
       to: giver.phone,
-      body: `Secret Santa: You'll be gifting ${receiver.name} for ${eventName} on ${eventDate}. Keep it secret!`
+      body: `Secret Santa: You'll be gifting ${receiver.name} for ${eventName} on ${eventDate}. Keep it secret! At the present time, nobody else but you knows who you were matched with. Keep the magic alive, keep it a secret! You need to click the following link to confirm that you have received and accept the result of your draw: ${ackLinks.get(giver.id)}`
     })
   );
 
@@ -200,10 +294,23 @@ app.post('/api/draw', async (req, res) => {
 
   try {
     const matches = derangeParticipants(participants);
+    const acknowledgementRecords = registerAcknowledgements({
+      matches,
+      event: {
+        name,
+        date,
+        exchangeType: req.body.exchangeType,
+        otherGroupType: req.body.otherGroupType
+      }
+    });
+    const ackLinks = new Map(
+      acknowledgementRecords.map((record) => [record.giverId, record.acknowledgementUrl])
+    );
     const messagePayload = {
       eventName: name,
       eventDate: date,
-      assignments: matches
+      assignments: matches,
+      ackLinks
     };
 
     await Promise.all([sendEmails(messagePayload), sendSmsMessages(messagePayload)]);
@@ -215,13 +322,51 @@ app.post('/api/draw', async (req, res) => {
         email: giver.email || null,
         phone: giver.phone || null
       },
-      receiver: { id: receiver.id, name: receiver.name }
+      receiver: { id: receiver.id, name: receiver.name },
+      acknowledgementUrl: ackLinks.get(giver.id)
     }));
 
     res.json({ assignments: responseAssignments });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to generate Secret Santa assignments.' });
+  }
+});
+
+app.post('/api/acknowledgements', (req, res) => {
+  const token = req.body?.token;
+  if (!token) {
+    return res.status(400).json({ error: 'Acknowledgement token is required.' });
+  }
+
+  try {
+    const payload = decodeAckToken(token);
+    const stored = acknowledgementsStore.get(token) || {
+      ...payload,
+      acknowledgementUrl: `${ACK_BASE_URL}?payload=${encodeURIComponent(token)}`,
+      eventTypeLabel: getExchangeLabel(payload.exchangeType, payload.otherGroupType)
+    };
+    if (!stored.acknowledged) {
+      stored.acknowledged = true;
+      stored.acknowledgedAt = new Date().toISOString();
+      acknowledgementsStore.set(token, stored);
+    }
+
+    res.json({
+      eventName: stored.eventName,
+      eventDate: stored.eventDate,
+      exchangeType: stored.exchangeType,
+      otherGroupType: stored.otherGroupType,
+      eventTypeLabel: stored.eventTypeLabel,
+      giverId: stored.giverId,
+      giverName: stored.giverName,
+      receiverId: stored.receiverId,
+      receiverName: stored.receiverName,
+      acknowledgedAt: stored.acknowledgedAt
+    });
+  } catch (error) {
+    console.error('Failed to verify acknowledgement token', error);
+    res.status(400).json({ error: 'Invalid acknowledgement token.' });
   }
 });
 

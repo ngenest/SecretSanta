@@ -40,6 +40,7 @@ export default function App() {
   const [assignments, setAssignments] = useState([]);
   const [isAnimationComplete, setIsAnimationComplete] = useState(false);
   const [areAssignmentsReady, setAreAssignmentsReady] = useState(false);
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
 
   useEffect(() => {
     if (
@@ -47,7 +48,7 @@ export default function App() {
       isAnimationComplete &&
       areAssignmentsReady
     ) {
-      setScreenIndex(SCREENS.confirmation);
+      setShowNotificationPrompt(true);
     }
   }, [areAssignmentsReady, isAnimationComplete, screenIndex]);
 
@@ -56,6 +57,7 @@ export default function App() {
     setScreenIndex(SCREENS.draw);
     setIsAnimationComplete(false);
     setAreAssignmentsReady(false);
+    setShowNotificationPrompt(false);
     try {
       const response = await fetch('/api/draw', {
         method: 'POST',
@@ -73,6 +75,7 @@ export default function App() {
       setScreenIndex(SCREENS.setup);
       setIsAnimationComplete(false);
       setAreAssignmentsReady(false);
+      setShowNotificationPrompt(false);
       alert('Unable to complete draw. Please try again.');
     }
   };
@@ -80,6 +83,20 @@ export default function App() {
   const handleRestart = () => {
     setAssignments([]);
     setEventData(createDefaultEvent());
+    setScreenIndex(SCREENS.setup);
+    setIsAnimationComplete(false);
+    setAreAssignmentsReady(false);
+    setShowNotificationPrompt(false);
+  };
+
+  const handleNotificationConfirmed = () => {
+    setShowNotificationPrompt(false);
+    setScreenIndex(SCREENS.confirmation);
+  };
+
+  const handleDrawCancellation = () => {
+    setShowNotificationPrompt(false);
+    setAssignments([]);
     setScreenIndex(SCREENS.setup);
     setIsAnimationComplete(false);
     setAreAssignmentsReady(false);
@@ -99,9 +116,11 @@ export default function App() {
       )}
       {screenIndex === SCREENS.draw && (
         <DrawAnimationScreen
-          eventName={eventData.name}
           participants={participantList}
           onComplete={() => setIsAnimationComplete(true)}
+          notificationPromptVisible={showNotificationPrompt}
+          onNotificationConfirm={handleNotificationConfirmed}
+          onCancelDrawConfirmed={handleDrawCancellation}
         />
       )}
       {screenIndex === SCREENS.confirmation && (

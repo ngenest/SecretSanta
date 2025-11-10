@@ -287,8 +287,8 @@ const validatePayload = (body) => {
   };
 
   if (!drawMode || drawMode === 'couples') {
-    if (!Array.isArray(couples) || couples.length !== 4) {
-      errors.push('Exactly four couples are required');
+    if (!Array.isArray(couples) || couples.length < 2) {
+      errors.push('At least two couples are required');
     }
 
     couples?.forEach((couple, coupleIndex) => {

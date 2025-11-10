@@ -1,0 +1,25 @@
+name: secret-santa-draws
+region: nyc
+services:
+  - name: web
+    github:
+      repo: your-username/SecretSanta
+      branch: main
+      deploy_on_push: true
+    build_command: npm run build
+    run_command: npm start
+    environment_slug: node-js
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    http_port: 3000
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      # Add your other environment variables as secrets in DO dashboard
+    routes:
+      - path: /
+domains:
+  - domain: secretsantadraws.com
+    type: PRIMARY

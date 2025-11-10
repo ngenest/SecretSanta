@@ -1,11 +1,16 @@
 {
   "name": "secret-santa-draws",
   "version": "1.0.0",
+  "private": true,
   "scripts": {
-    "build": "bash scripts/build.sh",
-    "start": "node server/dist/index.js"
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "cd client && npm ci && npm run build",
+    "build:server": "cd backend && npm ci && npm run build",
+    "start": "cd backend && npm start",
+    "postinstall": "cd client && npm ci && cd ../backend && npm ci"
   },
   "engines": {
-    "node": "18.x"
+    "node": "18.x",
+    "npm": ">=9.0.0"
   }
 }

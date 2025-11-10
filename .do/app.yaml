@@ -3,7 +3,7 @@ region: nyc
 services:
   - name: web
     github:
-      repo: ngenest/SecretSanta
+      repo: your-username/SecretSanta
       branch: main
       deploy_on_push: true
     source_dir: /
@@ -13,3 +13,34 @@ services:
     instance_count: 1
     instance_size_slug: basic-xxs
     http_port: 3000
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: SMTP_HOST
+        scope: RUN_TIME
+        type: SECRET
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        value: "apikey"
+      - key: SMTP_PASSWORD
+        scope: RUN_TIME
+        type: SECRET
+      - key: FROM_EMAIL
+        value: "secretsanta@codeboxx.com"
+      - key: TWILIO_ACCOUNT_SID
+        scope: RUN_TIME
+        type: SECRET
+      - key: TWILIO_AUTH_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+      - key: TWILIO_PHONE_NUMBER
+        scope: RUN_TIME
+        type: SECRET
+      - key: TWILIO_FROM_NUMBER
+        scope: RUN_TIME
+        type: SECRET

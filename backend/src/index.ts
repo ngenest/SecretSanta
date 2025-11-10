@@ -13,32 +13,44 @@ app.use(cors({
 
 app.use(express.json());
 
-// Health check endpoint
+// API routes MUST come before static file serving
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', message: 'Secret Santa API is running' });
 });
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Secret Santa API',
-    version: '1.0.0',
-    endpoints: {
-      health: '/api/health',
-      // Add your other API endpoints here
-    }
-  });
+app.post('/api/draws', (req, res) => {
+  // Create a new Secret Santa draw
 });
 
-// Add your other routes here (e.g., /api/draws, /api/participants, etc.)
+app.get('/api/draws/:id', (req, res) => {
+  // Get draw details
+});
 
-// Serve static files if frontend exists
+app.post('/api/draws/:id/participants', (req, res) => {
+  // Add participants to a draw
+});
+
+app.post('/api/draws/:id/execute', (req, res) => {
+  // Execute the draw and send notifications
+});
+
+// Serve frontend static files in production
 if (process.env.NODE_ENV === 'production') {
   const frontendPath = path.join(__dirname, '../../frontend/dist');
   app.use(express.static(frontendPath));
   
+  // Handle client-side routing - must be LAST
   app.get('*', (req, res) => {
     res.sendFile(path.join(frontendPath, 'index.html'));
+  });
+} else {
+  // Development fallback
+  app.get('/', (req, res) => {
+    res.json({ 
+      message: 'Secret Santa API',
+      version: '1.0.0',
+      endpoints: { health: '/api/health' }
+    });
   });
 }
 

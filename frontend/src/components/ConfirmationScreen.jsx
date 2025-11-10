@@ -147,8 +147,12 @@ export default function ConfirmationScreen({
       </motion.h1>
       <section className="confirmation-content">
         <p className="success-message">
-          Your Secret Santa matches have been drawn successfully! Email and SMS
-          notifications are on their merry way to every participant.
+          Email and SMS notifications are on their merry way to every participant.
+          Every time one of them confirms receipt by clicking their link, you, as
+          the organizer, will be notified. You can then remain the great leader you
+          have been so far!
+
+          Happy Holidays!
         </p>
         <div className="participant-list">
           {participants.map((participant, index) => (

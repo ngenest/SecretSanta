@@ -49,6 +49,9 @@ export default function App() {
   const [isAnimationComplete, setIsAnimationComplete] = useState(false);
   const [areAssignmentsReady, setAreAssignmentsReady] = useState(false);
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
+  const [notificationBatchId, setNotificationBatchId] = useState(null);
+  const [isSendingNotifications, setIsSendingNotifications] = useState(false);
+  const [notificationError, setNotificationError] = useState('');
 
   useEffect(() => {
     if (
@@ -66,6 +69,9 @@ export default function App() {
     setIsAnimationComplete(false);
     setAreAssignmentsReady(false);
     setShowNotificationPrompt(false);
+    setNotificationBatchId(null);
+    setNotificationError('');
+    setIsSendingNotifications(false);
     try {
       const response = await fetch('/api/draw', {
         method: 'POST',
@@ -78,12 +84,16 @@ export default function App() {
       const data = await response.json();
       setAssignments(data.assignments);
       setAreAssignmentsReady(true);
+      setNotificationBatchId(data.notificationBatchId || null);
     } catch (error) {
       console.error(error);
       setScreenIndex(SCREENS.setup);
       setIsAnimationComplete(false);
       setAreAssignmentsReady(false);
       setShowNotificationPrompt(false);
+      setNotificationBatchId(null);
+      setNotificationError('');
+      setIsSendingNotifications(false);
       alert('Unable to complete draw. Please try again.');
     }
   };
@@ -95,11 +105,46 @@ export default function App() {
     setIsAnimationComplete(false);
     setAreAssignmentsReady(false);
     setShowNotificationPrompt(false);
+    setNotificationBatchId(null);
+    setNotificationError('');
+    setIsSendingNotifications(false);
   };
 
-  const handleNotificationConfirmed = () => {
-    setShowNotificationPrompt(false);
-    setScreenIndex(SCREENS.confirmation);
+  const handleNotificationConfirmed = async () => {
+    if (!notificationBatchId) {
+      setNotificationError(
+        'We could not locate the notification batch. Please restart the draw and try again.'
+      );
+      return false;
+    }
+
+    setIsSendingNotifications(true);
+    setNotificationError('');
+
+    try {
+      const response = await fetch('/api/notifications/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchId: notificationBatchId })
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        const message = errorPayload?.error || 'Failed to send notifications.';
+        throw new Error(message);
+      }
+
+      setShowNotificationPrompt(false);
+      setScreenIndex(SCREENS.confirmation);
+      setNotificationBatchId(null);
+      return true;
+    } catch (error) {
+      console.error(error);
+      setNotificationError(error.message || 'Unable to send notifications. Please try again.');
+      return false;
+    } finally {
+      setIsSendingNotifications(false);
+    }
   };
 
   const handleDrawCancellation = () => {
@@ -108,6 +153,9 @@ export default function App() {
     setScreenIndex(SCREENS.setup);
     setIsAnimationComplete(false);
     setAreAssignmentsReady(false);
+    setNotificationBatchId(null);
+    setNotificationError('');
+    setIsSendingNotifications(false);
   };
 
   const participantList =
@@ -133,6 +181,8 @@ export default function App() {
           onComplete={() => setIsAnimationComplete(true)}
           notificationPromptVisible={showNotificationPrompt}
           onNotificationConfirm={handleNotificationConfirmed}
+          notificationsSending={isSendingNotifications}
+          notificationError={notificationError}
           onCancelDrawConfirmed={handleDrawCancellation}
         />
       )}

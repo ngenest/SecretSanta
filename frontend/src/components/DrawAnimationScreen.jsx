@@ -26,6 +26,8 @@ export default function DrawAnimationScreen({
   onComplete,
   notificationPromptVisible,
   onNotificationConfirm,
+  notificationsSending = false,
+  notificationError = '',
   onCancelDrawConfirmed
 }) {
   const controls = useAnimationControls();
@@ -116,10 +118,14 @@ export default function DrawAnimationScreen({
             transition={{ duration: 0.4 }}
           >
             <h2>
-              I have completed the draw and everything looks right. Do you want to
+              The draw is now completed and everything looks right. Do you want to
               inform each participant about whom they were assigned over their
-              preferred communication channel?
+              preferred communication channel? - Fees may apply
             </h2>
+            <p className="notification-disclaimer">
+              Each participant will be sent a link within that notification allowing
+              them to confirm their match. They are the only one to know!
+            </p>
             <p className="notification-intro">
               Here is how each participant will be contacted:
             </p>
@@ -128,18 +134,25 @@ export default function DrawAnimationScreen({
                 <li key={participants[index]?.id || index}>{instruction}</li>
               ))}
             </ul>
+            {notificationError && (
+              <p className="notification-error" role="alert">
+                {notificationError}
+              </p>
+            )}
             <div className="button-row">
               <button
                 type="button"
                 className="primary"
                 onClick={onNotificationConfirm}
+                disabled={notificationsSending}
               >
-                Yes
+                {notificationsSending ? 'Sending…' : 'Yes'}
               </button>
               <button
                 type="button"
                 className="secondary"
                 onClick={() => setShowCancelOverlay(true)}
+                disabled={notificationsSending}
               >
                 No
               </button>

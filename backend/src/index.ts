@@ -4,6 +4,10 @@ import path from 'path';
 
 const app = express();
 
+// CRITICAL: These must come BEFORE routes
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://secretsantadraws.com', 'https://www.secretsantadraws.com']
@@ -13,60 +17,41 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
 // Request logging middleware
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`, req.body);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log('Headers:', req.headers);
+  console.log('Body:', req.body);
   next();
 });
 
-// API routes
+// ALL API ROUTES MUST BE HERE (before static file serving)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Secret Santa API is running' });
 });
 
+app.get('/api/test', (req, res) => {
+  res.json({ success: true, message: 'API is reachable' });
+});
+
 app.post('/api/draws', (req, res) => {
+  console.log('POST /api/draws called with:', req.body);
   try {
-    console.log('Draw request received:', req.body);
     // Your draw logic here
-    res.json({ success: true, message: 'Draw completed' });
-  } catch (error) {
+    res.json({ success: true, drawId: '123', message: 'Draw completed successfully' });
+  } catch (error: any) {
     console.error('Draw error:', error);
-    res.status(500).json({ error: 'Failed to complete draw' });
+    res.status(500).json({ error: error.message || 'Failed to complete draw' });
   }
 });
 
-app.get('/api/draws/:id', (req, res) => {
-  // Get draw details
-});
-
-app.post('/api/draws/:id/participants', (req, res) => {
-  // Add participants to a draw
-});
-
-app.post('/api/draws/:id/execute', (req, res) => {
-  // Execute the draw and send notifications
-});
-
-// Serve frontend static files in production
+// Serve frontend static files - MUST BE LAST
 if (process.env.NODE_ENV === 'production') {
   const frontendPath = path.join(__dirname, '../../frontend/dist');
   app.use(express.static(frontendPath));
   
-  // Handle client-side routing - must be LAST
   app.get('*', (req, res) => {
     res.sendFile(path.join(frontendPath, 'index.html'));
-  });
-} else {
-  // Development fallback
-  app.get('/', (req, res) => {
-    res.json({ 
-      message: 'Secret Santa API',
-      version: '1.0.0',
-      endpoints: { health: '/api/health' }
-    });
   });
 }
 

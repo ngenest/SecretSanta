@@ -1,10 +1,11 @@
 {
-  // ...existing code...
+  "name": "secret-santa-draws",
+  "version": "1.0.0",
   "scripts": {
-    "build": "npm run build:client && npm run build:server",
-    "build:client": "cd client && npm install && npm run build",
-    "build:server": "cd server && npm install && npm run build",
-    "start": "cd server && npm start"
+    "build": "bash scripts/build.sh",
+    "start": "node server/dist/index.js"
+  },
+  "engines": {
+    "node": "18.x"
   }
-  // ...existing code...
 }

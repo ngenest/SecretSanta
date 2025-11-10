@@ -1,8 +1,9 @@
 {
   "name": "secret-santa-backend",
   "version": "1.0.0",
-  "type": "module",
+  "type": "commonjs",
   "private": true,
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",

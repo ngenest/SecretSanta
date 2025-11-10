@@ -12,12 +12,12 @@ services:
     environment_slug: node-js
     instance_count: 1
     instance_size_slug: basic-xxs
-    http_port: 3000
+    http_port: 8080
     envs:
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: "3000"
+        value: "8080"
       - key: SMTP_HOST
         value: smtp.sendgrid.net
       - key: SMTP_PORT

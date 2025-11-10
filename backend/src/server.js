@@ -57,6 +57,7 @@ const ACK_BASE_URL =
 const ACK_KEY = createHash('sha256').update(ACK_SECRET).digest();
 
 const acknowledgementsStore = new Map();
+const pendingNotificationBatches = new Map();
 
 const EXCHANGE_LABELS = {
   family: 'Family',
@@ -622,8 +623,6 @@ app.post('/api/draw', async (req, res) => {
       ackLinks
     };
 
-    await Promise.all([sendEmails(messagePayload), sendSmsMessages(messagePayload)]);
-
     const responseAssignments = matches.map(({ giver, receiver }) => ({
       giver: {
         id: giver.id,
@@ -635,14 +634,47 @@ app.post('/api/draw', async (req, res) => {
       acknowledgementUrl: ackLinks.get(giver.id)
     }));
 
+    const notificationBatchId = randomUUID();
+    pendingNotificationBatches.set(notificationBatchId, {
+      payload: messagePayload,
+      createdAt: new Date().toISOString()
+    });
+
     res.json({
       assignments: responseAssignments,
       drawDate,
-      drawMode: drawMode || 'couples'
+      drawMode: drawMode || 'couples',
+      notificationBatchId
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to generate Secret Santa assignments.' });
+  }
+});
+
+app.post('/api/notifications/send', async (req, res) => {
+  const batchId = req.body?.batchId;
+  if (!batchId) {
+    return res.status(400).json({ error: 'Notification batch id is required.' });
+  }
+
+  const batch = pendingNotificationBatches.get(batchId);
+  if (!batch) {
+    return res.status(404).json({ error: 'Notification batch not found or already processed.' });
+  }
+
+  try {
+    await Promise.all([
+      sendEmails(batch.payload),
+      sendSmsMessages(batch.payload)
+    ]);
+
+    pendingNotificationBatches.delete(batchId);
+    const sentAt = new Date().toISOString();
+    res.json({ sentAt });
+  } catch (error) {
+    console.error('Failed to send notifications', error);
+    res.status(500).json({ error: 'Failed to send notifications.' });
   }
 });
 

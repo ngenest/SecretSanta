@@ -7,8 +7,8 @@ services:
       branch: main
       deploy_on_push: true
     source_dir: /
-    build_command: npm run build
-    run_command: npm start
+    build_command: cd backend && npm ci && npm run build
+    run_command: cd backend && npm start
     environment_slug: node-js
     instance_count: 1
     instance_size_slug: basic-xxs
@@ -19,19 +19,18 @@ services:
       - key: PORT
         value: "3000"
       - key: SMTP_HOST
-        scope: RUN_TIME
-        type: SECRET
+        value: smtp.sendgrid.net
       - key: SMTP_PORT
         value: "587"
       - key: SMTP_SECURE
         value: "false"
       - key: SMTP_USER
-        value: "apikey"
+        value: apikey
       - key: SMTP_PASSWORD
         scope: RUN_TIME
         type: SECRET
       - key: FROM_EMAIL
-        value: "secretsanta@codeboxx.com"
+        value: secretsanta@codeboxx.com
       - key: TWILIO_ACCOUNT_SID
         scope: RUN_TIME
         type: SECRET

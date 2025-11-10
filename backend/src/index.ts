@@ -7,19 +7,35 @@ const app = express();
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://secretsantadraws.com', 'https://www.secretsantadraws.com']
-    : '*',
-  credentials: true
+    : ['http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// API routes MUST come before static file serving
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`, req.body);
+  next();
+});
+
+// API routes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Secret Santa API is running' });
 });
 
 app.post('/api/draws', (req, res) => {
-  // Create a new Secret Santa draw
+  try {
+    console.log('Draw request received:', req.body);
+    // Your draw logic here
+    res.json({ success: true, message: 'Draw completed' });
+  } catch (error) {
+    console.error('Draw error:', error);
+    res.status(500).json({ error: 'Failed to complete draw' });
+  }
 });
 
 app.get('/api/draws/:id', (req, res) => {
@@ -53,6 +69,14 @@ if (process.env.NODE_ENV === 'production') {
     });
   });
 }
+
+// Error handling middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error'
+  });
+});
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 app.listen(PORT, '0.0.0.0', () => {

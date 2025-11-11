@@ -53,6 +53,7 @@ export default function App() {
   const [notificationBatchId, setNotificationBatchId] = useState(null);
   const [isSendingNotifications, setIsSendingNotifications] = useState(false);
   const [notificationError, setNotificationError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (
@@ -74,10 +75,12 @@ export default function App() {
     setNotificationError('');
     setIsSendingNotifications(false);
     try {
+      setIsLoading(true);
       const result = await createDraw(payload);
       setAssignments(result.assignments);
       setAreAssignmentsReady(true);
       setNotificationBatchId(result.notificationBatchId || null);
+      setScreenIndex(SCREENS.confirmation); // Move to confirmation screen on successful draw
     } catch (error) {
       console.error('Error:', error);
       setScreenIndex(SCREENS.setup);
@@ -88,6 +91,8 @@ export default function App() {
       setNotificationError('');
       setIsSendingNotifications(false);
       alert('Unable to complete draw. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 

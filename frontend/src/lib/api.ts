@@ -1,4 +1,6 @@
-const API_URL = '/api';
+const API_URL = import.meta.env.PROD 
+  ? 'http://localhost:8080/api' // Production: port 8080
+  : 'http://localhost:4000/api'; // Development: backend port 4000
 
 export async function createDraw(drawData: any) {
   try {
@@ -16,7 +18,8 @@ export async function createDraw(drawData: any) {
     console.log('Response data:', data);
     
     if (!response.ok) {
-      throw new Error(data.error || 'Failed to create draw');
+      const errorMessage = data.error || data.errors?.join(', ') || 'Failed to create draw';
+      throw new Error(errorMessage);
     }
     
     return data;

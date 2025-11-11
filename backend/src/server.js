@@ -743,22 +743,23 @@ app.post('/api/acknowledgements', async (req, res) => {
     console.error('Failed to verify acknowledgement token', error);
     res.status(400).json({ error: 'Invalid acknowledgement token.' });
   }
-});onsole.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
+const frontendPath = path.join(__dirname, '../../frontend/dist');
+if (process.env.NODE_ENV === 'production') {
+  // Serve frontend static files in production
+  app.get('/health', (req, res) => res.json({ status: 'ok' }));
+}
 
+app.use(express.static(frontendPath));
 
+app.get('*', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'index.html'));
+});
 
+const PORT = process.env.PORT || 8080;
 
-
-
-
-
-
-
-
-
-
-
-
-});  console.log(`Secret Santa backend listening on port ${PORT}`);app.listen(PORT, '0.0.0.0', () => {}  });    res.sendFile(path.join(frontendPath, 'index.html'));  app.get('*', (req, res) => {    app.use(express.static(frontendPath));  const frontendPath = path.join(__dirname, '../../frontend/dist');if (process.env.NODE_ENV === 'production') {// Serve frontend static files in productionapp.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Secret Santa backend listening on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+});

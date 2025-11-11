@@ -61,14 +61,40 @@ export default function DrawAnimationScreen({
 
   useEffect(() => {
     let timeout;
-    const startTime = Date.now();
+    let rafId;
+    let cancelled = false;
     const MIN_DISPLAY_DURATION = 5000;
-    animationSequence(controls).then(() => {
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, MIN_DISPLAY_DURATION - elapsed);
-      timeout = setTimeout(onComplete, remaining);
-    });
-    return () => clearTimeout(timeout);
+
+    const runAnimation = async () => {
+      const startTime = Date.now();
+      try {
+        await animationSequence(controls);
+        if (cancelled) {
+          return;
+        }
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, MIN_DISPLAY_DURATION - elapsed);
+        timeout = window.setTimeout(onComplete, remaining);
+      } catch (error) {
+        console.error('Failed to play draw animation sequence', error);
+        if (!cancelled) {
+          onComplete();
+        }
+      }
+    };
+
+    rafId = window.requestAnimationFrame(runAnimation);
+
+    return () => {
+      cancelled = true;
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      controls.stop();
+    };
   }, [controls, onComplete]);
 
   useEffect(() => {

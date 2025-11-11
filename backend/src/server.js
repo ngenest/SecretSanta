@@ -643,18 +643,21 @@ app.post('/api/draw', async (req, res) => {
     return res.status(400).json({ errors: validationErrors });
   }
 
-  const recaptchaResult = await verifyRecaptchaToken(
-    req.body?.recaptchaToken,
-    getClientIp(req)
-  );
-  if (!recaptchaResult.success) {
-    const responseBody = {
-      errors: [recaptchaResult.message || 'Failed to validate reCAPTCHA.']
-    };
-    if (recaptchaResult.errorCodes?.length) {
-      responseBody.recaptcha = recaptchaResult.errorCodes;
+  const recaptchaRequired = shouldRequireRecaptcha();
+  if (recaptchaRequired || req.body?.recaptchaToken) {
+    const recaptchaResult = await verifyRecaptchaToken(
+      req.body?.recaptchaToken,
+      getClientIp(req)
+    );
+    if (!recaptchaResult.success) {
+      const responseBody = {
+        errors: [recaptchaResult.message || 'Failed to validate reCAPTCHA.']
+      };
+      if (recaptchaResult.errorCodes?.length) {
+        responseBody.recaptcha = recaptchaResult.errorCodes;
+      }
+      return res.status(400).json(responseBody);
     }
-    return res.status(400).json(responseBody);
   }
 
   const {

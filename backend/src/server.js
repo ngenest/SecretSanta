@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 import path from 'path';
+import { RecaptchaEnterpriseServiceClient } from '@google-cloud/recaptcha-enterprise';
 import { fileURLToPath } from 'url';
 import {
   randomUUID,
@@ -24,7 +25,58 @@ const RECAPTCHA_SECRET =
   process.env.GOOGLE_RECAPTCHA_SECRET_KEY ||
   process.env.RECAPTCHA_SECRET ||
   '';
+const RECAPTCHA_SITE_KEY =
+  process.env.RECAPTCHA_SITE_KEY ||
+  process.env.GOOGLE_RECAPTCHA_SITE_KEY ||
+  '';
+const RECAPTCHA_PROJECT_ID =
+  process.env.GOOGLE_CLOUD_PROJECT_ID ||
+  process.env.GCLOUD_PROJECT ||
+  process.env.RECAPTCHA_PROJECT_ID ||
+  '';
+const RECAPTCHA_ACTION = process.env.RECAPTCHA_ACTION?.trim() || 'event_setup';
+const RECAPTCHA_MINIMUM_SCORE = (() => {
+  const parsed = Number.parseFloat(process.env.RECAPTCHA_MINIMUM_SCORE ?? '0.5');
+  if (Number.isFinite(parsed)) {
+    if (parsed < 0) return 0;
+    if (parsed > 1) return 1;
+    return parsed;
+  }
+  return 0.5;
+})();
 const RECAPTCHA_VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify';
+const isRecaptchaEnterpriseConfigured = Boolean(RECAPTCHA_SITE_KEY && RECAPTCHA_PROJECT_ID);
+
+let recaptchaEnterpriseClient = null;
+let recaptchaEnterpriseParentPath = '';
+
+const getRecaptchaEnterpriseClient = () => {
+  if (!isRecaptchaEnterpriseConfigured) {
+    return null;
+  }
+
+  if (recaptchaEnterpriseClient && recaptchaEnterpriseParentPath) {
+    return {
+      client: recaptchaEnterpriseClient,
+      parent: recaptchaEnterpriseParentPath
+    };
+  }
+
+  try {
+    const client = new RecaptchaEnterpriseServiceClient();
+    recaptchaEnterpriseClient = client;
+    recaptchaEnterpriseParentPath = client.projectPath(RECAPTCHA_PROJECT_ID);
+    return {
+      client,
+      parent: recaptchaEnterpriseParentPath
+    };
+  } catch (error) {
+    console.error('Failed to initialize reCAPTCHA Enterprise client.', error);
+    recaptchaEnterpriseClient = null;
+    recaptchaEnterpriseParentPath = '';
+    return null;
+  }
+};
 
 const shouldRequireRecaptcha = () => {
   if (RECAPTCHA_SECRET) {
@@ -49,44 +101,107 @@ const verifyRecaptchaToken = async (token, remoteIp) => {
     return { success: false, message: 'Missing reCAPTCHA token.' };
   }
 
-  if (!RECAPTCHA_SECRET) {
+  if (!RECAPTCHA_SECRET && !isRecaptchaEnterpriseConfigured) {
     if (isProduction) {
-      console.error('reCAPTCHA secret key is not configured.');
+      console.error('reCAPTCHA secret key or enterprise configuration is not configured.');
       return { success: false, message: 'reCAPTCHA configuration error.' };
     }
 
-    console.warn('Skipping reCAPTCHA verification because the secret key is not configured.');
+    console.warn('Skipping reCAPTCHA verification because it is not configured.');
     return { success: true, skipped: true };
   }
 
   try {
-    const params = new URLSearchParams();
-    params.append('secret', RECAPTCHA_SECRET);
-    params.append('response', token);
-    if (remoteIp?.trim()) {
-      params.append('remoteip', remoteIp.trim());
+    if (RECAPTCHA_SECRET) {
+      const params = new URLSearchParams();
+      params.append('secret', RECAPTCHA_SECRET);
+      params.append('response', token);
+      if (remoteIp?.trim()) {
+        params.append('remoteip', remoteIp.trim());
+      }
+
+      const response = await fetch(RECAPTCHA_VERIFY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
+      });
+
+      if (!response.ok) {
+        console.error('Failed to contact reCAPTCHA verification endpoint.', await response.text());
+        return { success: false, message: 'Unable to verify reCAPTCHA token.' };
+      }
+
+      const payload = await response.json();
+      if (payload.success) {
+        return { success: true, payload };
+      }
+
+      return {
+        success: false,
+        message: 'reCAPTCHA validation failed.',
+        errorCodes: payload['error-codes'] || []
+      };
     }
 
-    const response = await fetch(RECAPTCHA_VERIFY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params
-    });
-
-    if (!response.ok) {
-      console.error('Failed to contact reCAPTCHA verification endpoint.', await response.text());
-      return { success: false, message: 'Unable to verify reCAPTCHA token.' };
+    const clientInfo = getRecaptchaEnterpriseClient();
+    if (!clientInfo) {
+      console.error('reCAPTCHA Enterprise client could not be initialized.');
+      return { success: false, message: 'reCAPTCHA configuration error.' };
     }
 
-    const payload = await response.json();
-    if (payload.success) {
-      return { success: true, payload };
+    const assessmentRequest = {
+      parent: clientInfo.parent,
+      assessment: {
+        event: {
+          token,
+          siteKey: RECAPTCHA_SITE_KEY,
+          expectedAction: RECAPTCHA_ACTION,
+          userIpAddress: remoteIp?.trim() || undefined
+        }
+      }
+    };
+
+    const [assessment] = await clientInfo.client.createAssessment(assessmentRequest);
+
+    if (!assessment.tokenProperties?.valid) {
+      const invalidReason = assessment.tokenProperties?.invalidReason;
+      console.error('reCAPTCHA token invalid:', invalidReason || 'unknown reason');
+      return {
+        success: false,
+        message: 'reCAPTCHA validation failed.',
+        errorCodes: invalidReason ? [invalidReason] : []
+      };
+    }
+
+    const assessmentAction = assessment.tokenProperties?.action;
+    if (assessmentAction && assessmentAction !== RECAPTCHA_ACTION) {
+      console.error('reCAPTCHA action mismatch.', { expected: RECAPTCHA_ACTION, received: assessmentAction });
+      return {
+        success: false,
+        message: 'reCAPTCHA validation failed.',
+        errorCodes: ['ACTION_MISMATCH']
+      };
+    }
+
+    const riskScore = assessment.riskAnalysis?.score ?? 0;
+    if (riskScore < RECAPTCHA_MINIMUM_SCORE) {
+      console.warn('reCAPTCHA score below threshold.', {
+        score: riskScore,
+        minimum: RECAPTCHA_MINIMUM_SCORE,
+        reasons: assessment.riskAnalysis?.reasons || []
+      });
+      return {
+        success: false,
+        message: 'reCAPTCHA validation failed.',
+        errorCodes: assessment.riskAnalysis?.reasons || []
+      };
     }
 
     return {
-      success: false,
-      message: 'reCAPTCHA validation failed.',
-      errorCodes: payload['error-codes'] || []
+      success: true,
+      payload: assessment,
+      score: riskScore,
+      reasons: assessment.riskAnalysis?.reasons || []
     };
   } catch (error) {
     console.error('Unexpected error during reCAPTCHA verification.', error);

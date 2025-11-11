@@ -6,7 +6,7 @@ const app = express();
 // CORS configuration
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://secretsantadraws.com', 'https://www.secretsantadraws.com']
+    ? ['https://secretsantadraws.com', 'https://www.secretsantadraws.com', 'https://www.secretsantadraw.ai', 'https://secretsantadraw.ai']
     : '*',
   credentials: true
 }));

@@ -288,6 +288,18 @@ textarea {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.recaptcha-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 0.25rem 0 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .recaptcha-wrapper {
+    justify-content: flex-start;
+  }
+}
+
 .form-subgroup {
   display: grid;
   gap: 0.45rem;

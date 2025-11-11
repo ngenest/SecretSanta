@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import ParticipantFields from './ParticipantFields.jsx';
 import IndividualParticipants from './IndividualParticipants.jsx';
+import RecaptchaCheckbox from './RecaptchaCheckbox.jsx';
+import { IS_RECAPTCHA_ENABLED, RECAPTCHA_SITE_KEY } from '../config/recaptcha';
 
 const DEFAULT_COUPLE_COUNT = 4;
 const MIN_INDIVIDUALS = 3;
@@ -171,6 +173,7 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
   const [secretSantaRules, setSecretSantaRules] = useState(initialEvent.secretSantaRules || '');
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
   const [errors, setErrors] = useState({});
+  const [recaptchaToken, setRecaptchaToken] = useState('');
 
   const [couples, setCouples] = useState(() => {
     const source =
@@ -259,7 +262,8 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
     hasEnoughParticipants &&
     participantsComplete &&
     emails.length === uniqueEmails.size &&
-    phones.length === uniquePhones.size;
+    phones.length === uniquePhones.size &&
+    (!IS_RECAPTCHA_ENABLED || Boolean(recaptchaToken));
 
   const clearParticipantErrors = () =>
     setErrors((prev) => ({
@@ -372,6 +376,9 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
       if (!hasOrganizerContact)
         nextErrors.organizerContact =
           'Provide at least one way to reach the organizer (email or phone).';
+      if (IS_RECAPTCHA_ENABLED && !recaptchaToken) {
+        nextErrors.recaptcha = 'Please confirm you are not a robot.';
+      }
       if (!hasEnoughParticipants) {
         nextErrors.participants =
           drawMode === 'individuals'
@@ -419,7 +426,8 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
       },
       secretSantaRules: secretSantaRules.trim(),
       couples: couplesPayload,
-      individuals: individualsPayload
+      individuals: individualsPayload,
+      recaptchaToken: recaptchaToken || undefined
     });
   };
 
@@ -464,6 +472,26 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
     setErrors((prev) => ({ ...prev, organizerContact: undefined }));
     setOrganizerPhone(value);
   };
+
+  const handleRecaptchaVerify = useCallback(
+    (token) => {
+      const normalizedToken = token ?? '';
+      setRecaptchaToken(normalizedToken);
+      if (normalizedToken) {
+        setErrors((prev) => ({ ...prev, recaptcha: undefined }));
+      } else if (IS_RECAPTCHA_ENABLED) {
+        setErrors((prev) => ({ ...prev, recaptcha: 'Please confirm you are not a robot.' }));
+      }
+    },
+    [setErrors]
+  );
+
+  const handleRecaptchaExpire = useCallback(() => {
+    setRecaptchaToken('');
+    if (IS_RECAPTCHA_ENABLED) {
+      setErrors((prev) => ({ ...prev, recaptcha: 'Please confirm you are not a robot.' }));
+    }
+  }, [setErrors]);
 
   const handleDrawModeChange = (value) => {
     clearParticipantErrors();
@@ -639,8 +667,16 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
               />
             </div>
           </div>
+          {IS_RECAPTCHA_ENABLED && (
+            <RecaptchaCheckbox
+              siteKey={RECAPTCHA_SITE_KEY}
+              onVerify={handleRecaptchaVerify}
+              onExpire={handleRecaptchaExpire}
+            />
+          )}
           {errors.organizerName && <p className="error">{errors.organizerName}</p>}
           {errors.organizerContact && <p className="error">{errors.organizerContact}</p>}
+          {errors.recaptcha && <p className="error">{errors.recaptcha}</p>}
         </div>
         <div className="form-group">
           <label htmlFor="eventDate">Gift Exchange Date</label>

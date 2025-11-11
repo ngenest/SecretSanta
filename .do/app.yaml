@@ -48,3 +48,9 @@ services:
       - key: ACK_SECRET
         scope: RUN_TIME
         type: SECRET
+      - key: VITE_RECAPTCHA_SITE_KEY
+        value: "6Lc7wQgsAAAAACVeB6gfJbqnjb8-GjDteQQ5etDe"
+        scope: RUN_AND_BUILD_TIME
+      - key: RECAPTCHA_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET

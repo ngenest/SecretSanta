@@ -48,6 +48,15 @@ SMTP_PASSWORD=your-password
 FROM_EMAIL=secretsanta@example.com
 ```
 
+### Configure Google reCAPTCHA
+
+The event setup form uses Google reCAPTCHA to prevent automated submissions. Provide the following environment variables:
+
+- Frontend (`frontend/.env`): `VITE_RECAPTCHA_SITE_KEY` – use the public site key `6Lc7wQgsAAAAACVeB6gfJbqnjb8-GjDteQQ5etDe`.
+- Backend (`backend/.env`): `RECAPTCHA_SECRET_KEY` – set this to the secret key `6Lc7wQgsAAAAALqvrhAs7iCsDsdKqlbcFQU5gykw` using a secrets manager (e.g. DigitalOcean App Platform Parameters) so it is not committed to source control.
+
+The repository includes `.env.example` files in both `frontend/` and `backend/` to illustrate the expected configuration.
+
 ### Run the application
 
 Start the backend (port 4000):

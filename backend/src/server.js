@@ -18,6 +18,82 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
+const isProduction = process.env.NODE_ENV === 'production';
+const RECAPTCHA_SECRET =
+  process.env.RECAPTCHA_SECRET_KEY ||
+  process.env.GOOGLE_RECAPTCHA_SECRET_KEY ||
+  process.env.RECAPTCHA_SECRET ||
+  '';
+const RECAPTCHA_VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify';
+
+const shouldRequireRecaptcha = () => {
+  if (RECAPTCHA_SECRET) {
+    return true;
+  }
+  return isProduction;
+};
+
+const getClientIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim().length > 0) {
+    return forwarded.split(',')[0].trim();
+  }
+  if (Array.isArray(forwarded) && forwarded.length > 0) {
+    return forwarded[0];
+  }
+  return req.ip;
+};
+
+const verifyRecaptchaToken = async (token, remoteIp) => {
+  if (!token) {
+    return { success: false, message: 'Missing reCAPTCHA token.' };
+  }
+
+  if (!RECAPTCHA_SECRET) {
+    if (isProduction) {
+      console.error('reCAPTCHA secret key is not configured.');
+      return { success: false, message: 'reCAPTCHA configuration error.' };
+    }
+
+    console.warn('Skipping reCAPTCHA verification because the secret key is not configured.');
+    return { success: true, skipped: true };
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.append('secret', RECAPTCHA_SECRET);
+    params.append('response', token);
+    if (remoteIp?.trim()) {
+      params.append('remoteip', remoteIp.trim());
+    }
+
+    const response = await fetch(RECAPTCHA_VERIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params
+    });
+
+    if (!response.ok) {
+      console.error('Failed to contact reCAPTCHA verification endpoint.', await response.text());
+      return { success: false, message: 'Unable to verify reCAPTCHA token.' };
+    }
+
+    const payload = await response.json();
+    if (payload.success) {
+      return { success: true, payload };
+    }
+
+    return {
+      success: false,
+      message: 'reCAPTCHA validation failed.',
+      errorCodes: payload['error-codes'] || []
+    };
+  } catch (error) {
+    console.error('Unexpected error during reCAPTCHA verification.', error);
+    return { success: false, message: 'reCAPTCHA verification failed.' };
+  }
+};
+
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -219,6 +295,10 @@ const validatePayload = (body) => {
   if (!body) {
     errors.push('Body required');
     return errors;
+  }
+
+  if (shouldRequireRecaptcha() && !body.recaptchaToken) {
+    errors.push('reCAPTCHA token is required');
   }
 
   const {
@@ -561,6 +641,20 @@ app.post('/api/draw', async (req, res) => {
   const validationErrors = validatePayload(req.body);
   if (validationErrors.length) {
     return res.status(400).json({ errors: validationErrors });
+  }
+
+  const recaptchaResult = await verifyRecaptchaToken(
+    req.body?.recaptchaToken,
+    getClientIp(req)
+  );
+  if (!recaptchaResult.success) {
+    const responseBody = {
+      errors: [recaptchaResult.message || 'Failed to validate reCAPTCHA.']
+    };
+    if (recaptchaResult.errorCodes?.length) {
+      responseBody.recaptcha = recaptchaResult.errorCodes;
+    }
+    return res.status(400).json(responseBody);
   }
 
   const {

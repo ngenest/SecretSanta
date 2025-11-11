@@ -115,13 +115,7 @@ export default function App() {
     setNotificationError('');
 
     try {
-      const response = await sendNotifications(notificationBatchId);
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({}));
-        const message = errorPayload?.error || 'Failed to send notifications.';
-        throw new Error(message);
-      }
+      await sendNotifications(notificationBatchId);
 
       setShowNotificationPrompt(false);
       setScreenIndex(SCREENS.confirmation);

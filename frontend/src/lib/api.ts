@@ -1,6 +1,6 @@
-const API_URL = import.meta.env.PROD 
-  ? 'http://localhost:8080/api' // Production: port 8080
-  : 'http://localhost:4000/api'; // Development: backend port 4000
+import { API_BASE_URL } from '../config/api';
+
+const API_URL = API_BASE_URL;
 
 export async function createDraw(drawData: any) {
   try {

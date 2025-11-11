@@ -746,18 +746,17 @@ app.post('/api/acknowledgements', async (req, res) => {
 });
 
 const frontendPath = path.join(__dirname, '../../frontend/dist');
+
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+// Serve frontend static files in production
 if (process.env.NODE_ENV === 'production') {
-  // Serve frontend static files in production
-  app.get('/health', (req, res) => res.json({ status: 'ok' }));
+  app.use(express.static(frontendPath));
+  
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendPath, 'index.html'));
+  });
 }
-
-app.use(express.static(frontendPath));
-
-app.get('*', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'index.html'));
-});
-
-const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Secret Santa backend listening on port ${PORT}`);

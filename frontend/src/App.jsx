@@ -4,6 +4,7 @@ import DrawAnimationScreen from './components/DrawAnimationScreen.jsx';
 import ConfirmationScreen from './components/ConfirmationScreen.jsx';
 import Header from './components/Header.jsx';
 import ProgressDots from './components/ProgressDots.jsx';
+import { createDraw, sendNotifications } from './lib/api';
 
 const SCREENS = {
   setup: 0,
@@ -73,20 +74,12 @@ export default function App() {
     setNotificationError('');
     setIsSendingNotifications(false);
     try {
-      const response = await fetch('/api/draws', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!response.ok) {
-        throw new Error('Failed to perform draw');
-      }
-      const data = await response.json();
-      setAssignments(data.assignments);
+      const result = await createDraw(payload);
+      setAssignments(result.assignments);
       setAreAssignmentsReady(true);
-      setNotificationBatchId(data.notificationBatchId || null);
+      setNotificationBatchId(result.notificationBatchId || null);
     } catch (error) {
-      console.error(error);
+      console.error('Error:', error);
       setScreenIndex(SCREENS.setup);
       setIsAnimationComplete(false);
       setAreAssignmentsReady(false);
@@ -122,11 +115,7 @@ export default function App() {
     setNotificationError('');
 
     try {
-      const response = await fetch('/api/notifications/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ batchId: notificationBatchId })
-      });
+      const response = await sendNotifications(notificationBatchId);
 
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({}));

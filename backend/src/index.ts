@@ -37,7 +37,7 @@ app.get('/api/test', (req, res) => {
   res.json({ success: true, message: 'API is reachable' });
 });
 
-// Handle both /api/draw and /api/draws
+// Handle both /api/draw and /api/draw
 app.post('/api/draw', (req, res) => {
   console.log('POST /api/draw called with:', req.body);
   try {
@@ -49,8 +49,8 @@ app.post('/api/draw', (req, res) => {
   }
 });
 
-app.post('/api/draws', (req, res) => {
-  console.log('POST /api/draws called with:', req.body);
+app.post('/api/draw', (req, res) => {
+  console.log('POST /api/draw called with:', req.body);
   try {
     // Your draw logic here
     res.json({ success: true, drawId: '123', message: 'Draw completed successfully' });

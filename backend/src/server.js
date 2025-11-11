@@ -35,6 +35,8 @@ const RECAPTCHA_PROJECT_ID =
   process.env.RECAPTCHA_PROJECT_ID ||
   '';
 const RECAPTCHA_ACTION = process.env.RECAPTCHA_ACTION?.trim() || 'event_setup';
+const RECAPTCHA_REQUIREMENT =
+  process.env.RECAPTCHA_REQUIRED?.toLowerCase() || '';
 const RECAPTCHA_MINIMUM_SCORE = (() => {
   const parsed = Number.parseFloat(process.env.RECAPTCHA_MINIMUM_SCORE ?? '0.5');
   if (Number.isFinite(parsed)) {
@@ -46,6 +48,7 @@ const RECAPTCHA_MINIMUM_SCORE = (() => {
 })();
 const RECAPTCHA_VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify';
 const isRecaptchaEnterpriseConfigured = Boolean(RECAPTCHA_SITE_KEY && RECAPTCHA_PROJECT_ID);
+const isRecaptchaConfigured = Boolean(RECAPTCHA_SECRET || isRecaptchaEnterpriseConfigured);
 
 let recaptchaEnterpriseClient = null;
 let recaptchaEnterpriseParentPath = '';
@@ -79,9 +82,14 @@ const getRecaptchaEnterpriseClient = () => {
 };
 
 const shouldRequireRecaptcha = () => {
-  if (RECAPTCHA_SECRET) {
+  if (RECAPTCHA_REQUIREMENT === 'true') {
     return true;
   }
+
+  if (!isRecaptchaConfigured) {
+    return false;
+  }
+
   return isProduction;
 };
 
@@ -101,13 +109,12 @@ const verifyRecaptchaToken = async (token, remoteIp) => {
     return { success: false, message: 'Missing reCAPTCHA token.' };
   }
 
-  if (!RECAPTCHA_SECRET && !isRecaptchaEnterpriseConfigured) {
+  if (!isRecaptchaConfigured) {
     if (isProduction) {
-      console.error('reCAPTCHA secret key or enterprise configuration is not configured.');
-      return { success: false, message: 'reCAPTCHA configuration error.' };
+      console.warn('reCAPTCHA is not configured. Skipping verification in production.');
+    } else {
+      console.warn('Skipping reCAPTCHA verification because it is not configured.');
     }
-
-    console.warn('Skipping reCAPTCHA verification because it is not configured.');
     return { success: true, skipped: true };
   }
 

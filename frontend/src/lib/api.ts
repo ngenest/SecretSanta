@@ -2,8 +2,8 @@ const API_URL = '/api';
 
 export async function createDraw(drawData: any) {
   try {
-    console.log('Sending request to:', `${API_URL}/draws`);
-    const response = await fetch(`${API_URL}/draws`, {
+    console.log('Sending request to:', `${API_URL}/draw`);
+    const response = await fetch(`${API_URL}/draw`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -24,4 +24,13 @@ export async function createDraw(drawData: any) {
     console.error('API Error:', error);
     throw error;
   }
+}
+
+// Add this export if you have another function calling /api/draws
+export async function executeDraw(drawId: string) {
+  const response = await fetch(`${API_URL}/draws/${drawId}/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return response.json();
 }

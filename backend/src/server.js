@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   randomUUID,
   randomBytes,
@@ -10,6 +12,9 @@ import {
   createDecipheriv,
   createHash
 } from 'crypto';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -551,6 +556,7 @@ const notifyOrganizerOfAcknowledgement = async ({
   await Promise.all(tasks);
 };
 
+// API routes
 app.post('/api/draw', async (req, res) => {
   const validationErrors = validatePayload(req.body);
   if (validationErrors.length) {
@@ -737,10 +743,22 @@ app.post('/api/acknowledgements', async (req, res) => {
     console.error('Failed to verify acknowledgement token', error);
     res.status(400).json({ error: 'Invalid acknowledgement token.' });
   }
+});onsole.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-app.listen(PORT, () => {
-  console.log(`Secret Santa backend listening on port ${PORT}`);
-});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+});  console.log(`Secret Santa backend listening on port ${PORT}`);app.listen(PORT, '0.0.0.0', () => {}  });    res.sendFile(path.join(frontendPath, 'index.html'));  app.get('*', (req, res) => {    app.use(express.static(frontendPath));  const frontendPath = path.join(__dirname, '../../frontend/dist');if (process.env.NODE_ENV === 'production') {// Serve frontend static files in productionapp.get('/health', (req, res) => res.json({ status: 'ok' }));

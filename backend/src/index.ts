@@ -1,6 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
 
@@ -11,7 +14,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://secretsantadraws.com', 'https://www.secretsantadraws.com']
-    : ['http://localhost:5173', 'http://localhost:3000'],
+    : ['http://localhost:5173', 'http://localhost:4000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -34,6 +37,18 @@ app.get('/api/test', (req, res) => {
   res.json({ success: true, message: 'API is reachable' });
 });
 
+// Handle both /api/draw and /api/draws
+app.post('/api/draw', (req, res) => {
+  console.log('POST /api/draw called with:', req.body);
+  try {
+    // Your draw logic here
+    res.json({ success: true, drawId: '123', message: 'Draw completed successfully' });
+  } catch (error: any) {
+    console.error('Draw error:', error);
+    res.status(500).json({ error: error.message || 'Failed to complete draw' });
+  }
+});
+
 app.post('/api/draws', (req, res) => {
   console.log('POST /api/draws called with:', req.body);
   try {
@@ -43,6 +58,14 @@ app.post('/api/draws', (req, res) => {
     console.error('Draw error:', error);
     res.status(500).json({ error: error.message || 'Failed to complete draw' });
   }
+});
+
+app.post('/api/notifications/send', async (req, res) => {
+  // Copy from server.js
+});
+
+app.post('/api/acknowledgements', async (req, res) => {
+  // Copy from server.js
 });
 
 // Serve frontend static files - MUST BE LAST
@@ -63,7 +86,8 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
-const PORT = parseInt(process.env.PORT || '8080', 10);
+const PORT = parseInt(process.env.PORT || '4000', 10);
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

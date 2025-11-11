@@ -7,8 +7,8 @@ services:
       branch: main
       deploy_on_push: true
     source_dir: /
-    build_command: cd backend && npm install && npm run build
-    run_command: cd backend && npm start
+    build_command: cd frontend && npm install && npm run build
+    run_command: cd backend && npm install && npm start
     environment_slug: node-js
     instance_count: 1
     instance_size_slug: basic-xxs

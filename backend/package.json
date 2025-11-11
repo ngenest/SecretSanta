@@ -1,20 +1,20 @@
 {
   "name": "secret-santa-backend",
   "version": "1.0.0",
-  "type": "commonjs",
+  "type": "module",
   "private": true,
-  "main": "dist/index.js",
+  "main": "src/server.js",
   "scripts": {
-    "build": "tsc",
-    "start": "ts-node src/index.ts",
-    "dev": "ts-node-dev --respawn --transpile-only src/index.ts"
+    "build": "echo 'No build needed for JS'",
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
   },
   "dependencies": {
+    "express": "^4.18.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "nodemailer": "^7.0.10",
-    "twilio": "^4.20.0",
+    "dotenv": "^16.3.1",
+    "nodemailer": "^6.9.0",
+    "twilio": "^4.0.0",
     "ts-node": "^10.9.2"
   },
   "devDependencies": {

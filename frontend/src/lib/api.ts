@@ -26,9 +26,8 @@ export async function createDraw(drawData: any) {
   }
 }
 
-// Add this export if you have another function calling /api/draws
 export async function executeDraw(drawId: string) {
-  const response = await fetch(`${API_URL}/draws/${drawId}/execute`, {
+  const response = await fetch(`${API_URL}/draw/${drawId}/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });

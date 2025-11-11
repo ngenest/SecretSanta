@@ -7,8 +7,8 @@ services:
       branch: main
       deploy_on_push: true
     source_dir: /
-    build_command: cd frontend && npm install && npm run build
-    run_command: cd backend && npm install && node src/server.js
+    build_command: npm run build
+    run_command: npm start
     environment_slug: node-js
     instance_count: 1
     instance_size_slug: basic-xxs
@@ -18,6 +18,8 @@ services:
         value: production
       - key: PORT
         value: "8080"
+      - key: APP_BASE_URL
+        value: "https://secretsantadraws.com"
       - key: SMTP_HOST
         value: smtp.sendgrid.net
       - key: SMTP_PORT
@@ -41,5 +43,8 @@ services:
         scope: RUN_TIME
         type: SECRET
       - key: TWILIO_FROM_NUMBER
+        scope: RUN_TIME
+        type: SECRET
+      - key: ACK_SECRET
         scope: RUN_TIME
         type: SECRET

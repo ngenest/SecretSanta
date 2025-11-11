@@ -54,6 +54,7 @@ export default function App() {
   const [isSendingNotifications, setIsSendingNotifications] = useState(false);
   const [notificationError, setNotificationError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [drawResult, setDrawResult] = useState(null);
 
   useEffect(() => {
     if (
@@ -80,7 +81,8 @@ export default function App() {
       setAssignments(result.assignments);
       setAreAssignmentsReady(true);
       setNotificationBatchId(result.notificationBatchId || null);
-      setScreenIndex(SCREENS.confirmation); // Move to confirmation screen on successful draw
+      setDrawResult(result); // Store the draw result
+      setScreenIndex('notification-confirmation'); // Move to notification confirmation screen (Step 2)
     } catch (error) {
       console.error('Error:', error);
       setScreenIndex(SCREENS.setup);
@@ -141,6 +143,27 @@ export default function App() {
     }
   };
 
+  const handleSendNotifications = async () => {
+    try {
+      setIsLoading(true);
+      await sendNotifications(notificationBatchId);
+      
+      // Now move to success screen (Step 3)
+      setScreenIndex('success');
+      
+    } catch (error) {
+      console.error('Error sending notifications:', error);
+      setNotificationError('Failed to send notifications. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSkipNotifications = () => {
+    // Move to success screen without sending
+    setScreenIndex('success');
+  };
+
   const handleDrawCancellation = () => {
     setShowNotificationPrompt(false);
     setAssignments([]);
@@ -190,6 +213,29 @@ export default function App() {
           assignments={assignments}
           onRestart={handleRestart}
         />
+      )}
+      {screenIndex === 'notification-confirmation' && (
+        <div>
+          <h2>Notification Confirmation</h2>
+          <p>
+            Your draw has been completed. Would you like to send notifications
+            to the participants?
+          </p>
+          <button onClick={handleSendNotifications} disabled={isLoading}>
+            Yes, send notifications
+          </button>
+          <button onClick={handleSkipNotifications} disabled={isLoading}>
+            Skip notifications
+          </button>
+          {notificationError && <p className="error">{notificationError}</p>}
+        </div>
+      )}
+      {screenIndex === 'success' && (
+        <div>
+          <h2>Success!</h2>
+          <p>Your draw was successful, and notifications have been sent.</p>
+          <button onClick={handleRestart}>Start a new draw</button>
+        </div>
       )}
     </div>
   );

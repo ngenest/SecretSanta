@@ -217,6 +217,7 @@ const verifyRecaptchaToken = async (token, remoteIp) => {
 };
 
 const app = express();
+app.set('trust proxy', true);
 app.use(express.json());
 app.use(cors());
 
@@ -250,12 +251,72 @@ const buildTwilioClient = () => {
 const twilioClient = buildTwilioClient();
 
 const ACK_SECRET = process.env.ACK_SECRET || process.env.ACKNOWLEDGEMENT_SECRET || 'development-secret';
-const ACK_BASE_URL_SOURCE =
-  process.env.ACK_BASE_URL || process.env.APP_BASE_URL || 'http://localhost:5173';
-const ACK_BASE_URL =
-  ACK_BASE_URL_SOURCE.endsWith('/acknowledgement')
-    ? ACK_BASE_URL_SOURCE
-    : `${ACK_BASE_URL_SOURCE.replace(/\/$/, '')}/acknowledgement`;
+
+const normalizeAckBaseUrl = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, '');
+  if (!withoutTrailingSlash) return null;
+  return withoutTrailingSlash.toLowerCase().endsWith('/acknowledgement')
+    ? withoutTrailingSlash
+    : `${withoutTrailingSlash}/acknowledgement`;
+};
+
+const CONFIGURED_ACK_BASE_URL = normalizeAckBaseUrl(
+  process.env.ACK_BASE_URL || process.env.APP_BASE_URL
+);
+const DEFAULT_ACK_BASE_URL = normalizeAckBaseUrl('http://localhost:5173');
+
+const resolveAckBaseUrl = (req) => {
+  if (CONFIGURED_ACK_BASE_URL) {
+    return CONFIGURED_ACK_BASE_URL;
+  }
+
+  const getFirstHeaderValue = (headerValue = '') => headerValue.split(',')[0]?.trim();
+
+  const forwardedHost = getFirstHeaderValue(req?.get?.('x-forwarded-host'));
+  const forwardedProto = getFirstHeaderValue(req?.get?.('x-forwarded-proto'));
+  if (forwardedHost) {
+    const protocol = forwardedProto || 'https';
+    const normalized = normalizeAckBaseUrl(`${protocol}://${forwardedHost}`);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const originHeader = req?.get?.('origin');
+  if (originHeader) {
+    const normalized = normalizeAckBaseUrl(originHeader);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const refererHeader = req?.get?.('referer');
+  if (refererHeader) {
+    try {
+      const refererUrl = new URL(refererHeader);
+      const normalized = normalizeAckBaseUrl(`${refererUrl.protocol}//${refererUrl.host}`);
+      if (normalized) {
+        return normalized;
+      }
+    } catch (error) {
+      // Ignore invalid referer headers
+    }
+  }
+
+  const hostHeader = getFirstHeaderValue(req?.get?.('host'));
+  if (hostHeader) {
+    const protocol = req?.protocol || 'http';
+    const normalized = normalizeAckBaseUrl(`${protocol}://${hostHeader}`);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return DEFAULT_ACK_BASE_URL;
+};
 
 const ACK_KEY = createHash('sha256').update(ACK_SECRET).digest();
 
@@ -358,7 +419,8 @@ const decodeAckToken = (token) => {
   return JSON.parse(decrypted.toString('utf8'));
 };
 
-const registerAcknowledgements = ({ matches, event }) => {
+const registerAcknowledgements = ({ matches, event, ackBaseUrl }) => {
+  const baseUrl = normalizeAckBaseUrl(ackBaseUrl) || DEFAULT_ACK_BASE_URL;
   const {
     name: eventName,
     date: eventDate,
@@ -392,7 +454,7 @@ const registerAcknowledgements = ({ matches, event }) => {
       issuedAt
     };
     const token = createAckToken(tokenPayload);
-    const acknowledgementUrl = `${ACK_BASE_URL}?payload=${encodeURIComponent(token)}`;
+    const acknowledgementUrl = `${baseUrl}?payload=${encodeURIComponent(token)}`;
     acknowledgementsStore.set(token, {
       ...tokenPayload,
       acknowledged: false,
@@ -823,6 +885,7 @@ app.post('/api/draw', async (req, res) => {
       preventSameGroup: drawMode !== 'individuals'
     });
     const drawDate = new Date().toISOString();
+    const ackBaseUrl = resolveAckBaseUrl(req);
     const acknowledgementRecords = registerAcknowledgements({
       matches,
       event: {
@@ -834,7 +897,8 @@ app.post('/api/draw', async (req, res) => {
         organizer: normalizedOrganizer,
         drawMode: drawMode || 'couples',
         drawDate
-      }
+      },
+      ackBaseUrl
     });
     const ackLinks = new Map(
       acknowledgementRecords.map((record) => [record.giverId, record.acknowledgementUrl])
@@ -911,9 +975,10 @@ app.post('/api/acknowledgements', async (req, res) => {
 
   try {
     const payload = decodeAckToken(token);
+    const ackBaseUrl = resolveAckBaseUrl(req);
     const stored = acknowledgementsStore.get(token) || {
       ...payload,
-      acknowledgementUrl: `${ACK_BASE_URL}?payload=${encodeURIComponent(token)}`,
+      acknowledgementUrl: `${ackBaseUrl}?payload=${encodeURIComponent(token)}`,
       eventTypeLabel: getExchangeLabel(payload.exchangeType, payload.otherGroupType)
     };
     if (!stored.acknowledged) {

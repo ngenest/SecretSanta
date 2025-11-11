@@ -54,3 +54,4 @@ services:
       - key: RECAPTCHA_SECRET_KEY
         scope: RUN_TIME
         type: SECRET
+# Environment variables configured for production deployment

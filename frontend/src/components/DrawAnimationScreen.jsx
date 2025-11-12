@@ -172,7 +172,7 @@ export default function DrawAnimationScreen({
                 onClick={onNotificationConfirm}
                 disabled={notificationsSending}
               >
-                {notificationsSending ? 'Sending…' : 'Yes'}
+                {notificationsSending ? 'Processing…' : 'Yes'}
               </button>
               <button
                 type="button"

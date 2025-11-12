@@ -29,11 +29,36 @@ export async function createDraw(drawData: any) {
   }
 }
 
-export async function sendNotifications(batchId: string) {
+interface PaymentIntentPayload {
+  batchId: string;
+  eventName?: string;
+  organizer?: {
+    name?: string;
+    email?: string;
+  };
+}
+
+export async function createNotificationPaymentIntent(payload: PaymentIntentPayload) {
+  const response = await fetch(`${API_URL}/payments/create-intent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to initialize payment.');
+  }
+
+  return data;
+}
+
+export async function sendNotifications(batchId: string, paymentIntentId: string) {
   const response = await fetch(`${API_URL}/notifications/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ batchId })
+    body: JSON.stringify({ batchId, paymentIntentId })
   });
   
   const data = await response.json();

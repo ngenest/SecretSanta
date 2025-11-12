@@ -252,6 +252,16 @@ const twilioClient = buildTwilioClient();
 
 const ACK_SECRET = process.env.ACK_SECRET || process.env.ACKNOWLEDGEMENT_SECRET || 'development-secret';
 
+const STRIPE_SECRET_KEY =
+  process.env.STRIPE_SECRET_KEY ||
+  process.env.STRIPE_SECRET ||
+  process.env.STRIPE_API_KEY ||
+  '';
+const STRIPE_API_BASE = 'https://api.stripe.com/v1';
+const NOTIFICATION_PAYMENT_AMOUNT_CENTS = 199;
+const NOTIFICATION_PAYMENT_CURRENCY = 'usd';
+const isStripeConfigured = Boolean(STRIPE_SECRET_KEY);
+
 const normalizeAckBaseUrl = (value) => {
   if (!value || typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -385,6 +395,18 @@ const formatDateTime = (value) => {
   }
 };
 
+const formatCurrency = (amountCents, currency = 'usd') => {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency
+    }).format((amountCents || 0) / 100);
+  } catch (error) {
+    const fallback = (amountCents || 0) / 100;
+    return `${currency.toUpperCase()} ${fallback.toFixed(2)}`;
+  }
+};
+
 const getTwilioSenderConfig = () => {
   const { TWILIO_MESSAGING_SERVICE_SID, TWILIO_FROM_NUMBER } = process.env;
   if (!TWILIO_MESSAGING_SERVICE_SID && !TWILIO_FROM_NUMBER) {
@@ -418,6 +440,99 @@ const decodeAckToken = (token) => {
   const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return JSON.parse(decrypted.toString('utf8'));
 };
+
+const toStripeParams = (entries = []) => {
+  const params = new URLSearchParams();
+  entries.forEach(([key, value]) => {
+    if (value === undefined || value === null) {
+      return;
+    }
+    const stringValue = typeof value === 'string' ? value : String(value);
+    if (!stringValue.trim()) {
+      return;
+    }
+    params.append(key, stringValue);
+  });
+  return params;
+};
+
+const stripeRequest = async (endpoint, { method = 'GET', body } = {}) => {
+  if (!isStripeConfigured) {
+    const error = new Error('Stripe is not configured.');
+    error.status = 503;
+    throw error;
+  }
+
+  const headers = {
+    Authorization: `Bearer ${STRIPE_SECRET_KEY}`
+  };
+
+  let requestBody;
+  if (body instanceof URLSearchParams) {
+    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    requestBody = body.toString();
+  } else if (typeof body === 'string') {
+    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    requestBody = body;
+  }
+
+  const response = await fetch(`${STRIPE_API_BASE}${endpoint}`, {
+    method,
+    headers,
+    body: requestBody
+  });
+
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = {};
+  }
+
+  if (!response.ok) {
+    const message = payload?.error?.message || 'Stripe request failed.';
+    const error = new Error(message);
+    error.status = response.status;
+    error.details = payload;
+    throw error;
+  }
+
+  return payload;
+};
+
+const createNotificationPaymentIntentRecord = async ({
+  batchId,
+  eventName,
+  organizer
+}) => {
+  const trimmedEventName = eventName?.trim() || '';
+  const organizerName = organizer?.name?.trim() || '';
+  const organizerEmail = organizer?.email?.trim() || '';
+  const description = trimmedEventName
+    ? `Secret Santa notifications for ${trimmedEventName}`
+    : 'Secret Santa notifications';
+
+  const params = toStripeParams([
+    ['amount', NOTIFICATION_PAYMENT_AMOUNT_CENTS],
+    ['currency', NOTIFICATION_PAYMENT_CURRENCY],
+    ['description', description],
+    ['automatic_payment_methods[enabled]', 'true'],
+    ['metadata[notificationBatchId]', batchId],
+    ['metadata[eventName]', trimmedEventName],
+    ['metadata[organizerName]', organizerName],
+    ['metadata[organizerEmail]', organizerEmail],
+    ['metadata[purpose]', 'notification_payment'],
+    ['receipt_email', organizerEmail]
+  ]);
+
+  return stripeRequest('/payment_intents', {
+    method: 'POST',
+    body: params
+  });
+};
+
+const retrievePaymentIntent = async (paymentIntentId) =>
+  stripeRequest(`/payment_intents/${paymentIntentId}`, { method: 'GET' });
 
 const registerAcknowledgements = ({ matches, event, ackBaseUrl }) => {
   const baseUrl = normalizeAckBaseUrl(ackBaseUrl) || DEFAULT_ACK_BASE_URL;
@@ -780,6 +895,48 @@ const sendOrganizerSmsNotification = async ({
   });
 };
 
+const sendOrganizerPaymentReceipt = async ({
+  email,
+  name,
+  eventName,
+  paymentIntentId,
+  amountCents,
+  currency
+}) => {
+  const recipient = email?.trim();
+  if (!recipient) {
+    return;
+  }
+
+  const organizerName = name?.trim() || 'Organizer';
+  const displayEventName = eventName?.trim() || 'your Secret Santa draw';
+  const formattedAmount = formatCurrency(amountCents, currency || NOTIFICATION_PAYMENT_CURRENCY);
+
+  const text = `Hi ${organizerName},\n\nThank you for organizing ${displayEventName} with Secret Santa Draws.\n\nWe received your payment of ${formattedAmount}.\nPayment reference: ${paymentIntentId}\n\nParticipant notifications are now on their way.\n\nHappy gifting!\nThe Secret Santa Draws Team`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color:#1f2937;">
+      <h2 style="color:#b71c1c; margin-top:0;">Payment received</h2>
+      <p>Hi ${escapeHtml(organizerName)},</p>
+      <p>Thank you for organizing <strong>${escapeHtml(displayEventName)}</strong> with Secret Santa Draws.</p>
+      <p style="margin:16px 0;">We received your payment of <strong>${escapeHtml(formattedAmount)}</strong>.</p>
+      <p style="margin:12px 0;">Payment reference: <strong>${escapeHtml(paymentIntentId || 'N/A')}</strong></p>
+      <p style="margin-top:16px;">We&apos;re now notifying every participant with their assignments. Keep the holiday spirit glowing!</p>
+      <p style="margin-top:24px;">With gratitude,<br/>The Secret Santa Draws Team</p>
+    </div>
+  `;
+
+  const message = {
+    from: process.env.FROM_EMAIL || 'secretsanta@example.com',
+    to: recipient,
+    subject: `Payment receipt for ${displayEventName}`,
+    text,
+    html
+  };
+
+  await mailTransport.sendMail(message);
+};
+
 const notifyOrganizerOfAcknowledgement = async ({
   organizer,
   eventName,
@@ -941,7 +1098,11 @@ app.post('/api/draw', async (req, res) => {
   }
 });
 
-app.post('/api/notifications/send', async (req, res) => {
+app.post('/api/payments/create-intent', async (req, res) => {
+  if (!isStripeConfigured) {
+    return res.status(503).json({ error: 'Payment processing is temporarily unavailable.' });
+  }
+
   const batchId = req.body?.batchId;
   if (!batchId) {
     return res.status(400).json({ error: 'Notification batch id is required.' });
@@ -953,18 +1114,103 @@ app.post('/api/notifications/send', async (req, res) => {
   }
 
   try {
+    const paymentIntent = await createNotificationPaymentIntentRecord({
+      batchId,
+      eventName: req.body?.eventName,
+      organizer: req.body?.organizer || {}
+    });
+
+    if (!paymentIntent?.client_secret) {
+      throw new Error('Stripe did not return a client secret.');
+    }
+
+    res.json({ clientSecret: paymentIntent.client_secret });
+  } catch (error) {
+    console.error('Failed to create payment intent', error);
+    const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 502;
+    res.status(status).json({ error: error.message || 'Unable to initialize payment.' });
+  }
+});
+
+app.post('/api/notifications/send', async (req, res) => {
+  const batchId = req.body?.batchId;
+  if (!batchId) {
+    return res.status(400).json({ error: 'Notification batch id is required.' });
+  }
+
+  const paymentIntentId = req.body?.paymentIntentId;
+  if (!paymentIntentId) {
+    return res.status(400).json({ error: 'Payment intent id is required.' });
+  }
+
+  const batch = pendingNotificationBatches.get(batchId);
+  if (!batch) {
+    return res.status(404).json({ error: 'Notification batch not found or already processed.' });
+  }
+
+  if (!isStripeConfigured) {
+    return res.status(503).json({ error: 'Payment processing is temporarily unavailable.' });
+  }
+
+  let paymentIntent;
+  try {
+    paymentIntent = await retrievePaymentIntent(paymentIntentId);
+  } catch (error) {
+    console.error('Failed to verify payment intent', error);
+    const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 502;
+    return res.status(status).json({ error: error.message || 'Unable to verify payment.' });
+  }
+
+  if (!paymentIntent || paymentIntent.object !== 'payment_intent') {
+    return res.status(404).json({ error: 'Payment not found.' });
+  }
+
+  if (paymentIntent.status !== 'succeeded') {
+    return res.status(402).json({ error: 'Payment has not been completed yet.' });
+  }
+
+  const paymentAmount = paymentIntent.amount_received ?? paymentIntent.amount ?? 0;
+  if (paymentAmount < NOTIFICATION_PAYMENT_AMOUNT_CENTS) {
+    return res.status(400).json({ error: 'Payment amount is insufficient for notification delivery.' });
+  }
+
+  const paymentCurrency = (paymentIntent.currency || '').toLowerCase() || NOTIFICATION_PAYMENT_CURRENCY;
+  if (paymentCurrency !== NOTIFICATION_PAYMENT_CURRENCY) {
+    return res.status(400).json({ error: 'Unexpected payment currency.' });
+  }
+
+  const metadataBatchId = paymentIntent.metadata?.notificationBatchId;
+  if (metadataBatchId !== batchId) {
+    return res.status(400).json({ error: 'Payment does not match this notification batch.' });
+  }
+
+  try {
     await Promise.all([
       sendEmails(batch.payload),
       sendSmsMessages(batch.payload)
     ]);
-
-    pendingNotificationBatches.delete(batchId);
-    const sentAt = new Date().toISOString();
-    res.json({ sentAt });
   } catch (error) {
     console.error('Failed to send notifications', error);
-    res.status(500).json({ error: 'Failed to send notifications.' });
+    return res.status(500).json({ error: 'Failed to send notifications.' });
   }
+
+  pendingNotificationBatches.delete(batchId);
+  const sentAt = new Date().toISOString();
+
+  try {
+    await sendOrganizerPaymentReceipt({
+      email: paymentIntent.receipt_email || paymentIntent.metadata?.organizerEmail,
+      name: paymentIntent.metadata?.organizerName,
+      eventName: paymentIntent.metadata?.eventName,
+      paymentIntentId: paymentIntent.id,
+      amountCents: paymentAmount,
+      currency: paymentCurrency
+    });
+  } catch (error) {
+    console.error('Failed to send organizer payment receipt', error);
+  }
+
+  res.json({ sentAt, paymentIntentId });
 });
 
 app.post('/api/acknowledgements', async (req, res) => {

@@ -1,63 +1,38 @@
-type StripeConstructor = (key: string, options?: Record<string, unknown>) => any;
-type StripeClient = ReturnType<StripeConstructor> | null;
+import { loadStripe } from '@stripe/stripe-js';
 
-declare global {
-  interface Window {
-    Stripe?: StripeConstructor;
-  }
-}
+let stripePromise: Promise<unknown> | null = null;
 
-let stripeLoadPromise: Promise<StripeConstructor> | null = null;
-let stripeInstance: StripeClient = null;
-
-const STRIPE_JS_SRC = 'https://js.stripe.com/v3/';
-
-const ensureStripeJsLoaded = () => {
-  if (typeof window === 'undefined') {
-    return Promise.reject(new Error('Stripe.js can only load in the browser.'));
-  }
-
-  if (window.Stripe) {
-    return Promise.resolve(window.Stripe as unknown as StripeConstructor);
-  }
-
-  if (!stripeLoadPromise) {
-    stripeLoadPromise = new Promise<StripeConstructor>((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = STRIPE_JS_SRC;
-      script.async = true;
-      script.onload = () => {
-        if (window.Stripe) {
-          resolve(window.Stripe as unknown as StripeConstructor);
-        } else {
-          reject(new Error('Stripe.js loaded but Stripe was not found on window.'));
-        }
-      };
-      script.onerror = () => reject(new Error('Failed to load Stripe.js'));
-      document.head.appendChild(script);
-    });
-  }
-
-  return stripeLoadPromise;
-};
-
-export async function loadStripeInstance(publishableKey: string) {
+export const loadStripeInstance = async (publishableKey: string) => {
   if (!publishableKey) {
-    throw new Error('A Stripe publishable key is required to initialize payments.');
+    throw new Error('Stripe publishable key is required');
   }
 
-  if (stripeInstance) {
-    return stripeInstance;
+  if (stripePromise) {
+    return stripePromise;
   }
 
-  const StripeConstructor = await ensureStripeJsLoaded();
-  stripeInstance = StripeConstructor(publishableKey, {
-    betas: ['express_checkout_beta_1'],
-  });
-  return stripeInstance;
-}
+  try {
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Stripe loading timed out')), 10000);
+    });
 
-export function resetStripeInstance() {
-  stripeInstance = null;
-  stripeLoadPromise = null;
-}
+    stripePromise = Promise.race([
+      loadStripe(publishableKey),
+      timeoutPromise
+    ]);
+
+    const stripe = await stripePromise;
+    
+    if (!stripe) {
+      stripePromise = null;
+      throw new Error('Failed to initialize Stripe');
+    }
+
+    return stripe;
+  } catch (error) {
+    stripePromise = null;
+    console.error('Stripe initialization error:', error);
+    throw error;
+  }
+};

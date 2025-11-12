@@ -258,6 +258,7 @@ const STRIPE_SECRET_KEY =
   process.env.STRIPE_API_KEY ||
   '';
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
+const STRIPE_TIMEOUT_MS = 15000; // 15 second timeout
 const NOTIFICATION_PAYMENT_AMOUNT_CENTS = 199;
 const NOTIFICATION_PAYMENT_CURRENCY = 'usd';
 const isStripeConfigured = Boolean(STRIPE_SECRET_KEY);
@@ -476,28 +477,57 @@ const stripeRequest = async (endpoint, { method = 'GET', body } = {}) => {
     requestBody = body;
   }
 
-  const response = await fetch(`${STRIPE_API_BASE}${endpoint}`, {
-    method,
-    headers,
-    body: requestBody
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), STRIPE_TIMEOUT_MS);
 
-  let payload = {};
   try {
-    payload = await response.json();
-  } catch (error) {
-    payload = {};
-  }
+    const response = await fetch(`${STRIPE_API_BASE}${endpoint}`, {
+      method,
+      headers,
+      body: requestBody,
+      signal: controller.signal
+    });
 
-  if (!response.ok) {
-    const message = payload?.error?.message || 'Stripe request failed.';
-    const error = new Error(message);
-    error.status = response.status;
-    error.details = payload;
+    clearTimeout(timeoutId);
+
+    let payload = {};
+    const contentType = response.headers.get('content-type') || '';
+    
+    if (contentType.includes('application/json')) {
+      try {
+        payload = await response.json();
+      } catch (jsonError) {
+        console.error('Failed to parse Stripe response as JSON', jsonError);
+        payload = {};
+      }
+    } else {
+      const text = await response.text();
+      console.error('Stripe returned non-JSON response:', text.substring(0, 200));
+      const error = new Error('Stripe API returned an invalid response.');
+      error.status = 502;
+      throw error;
+    }
+
+    if (!response.ok) {
+      const message = payload?.error?.message || 'Stripe request failed.';
+      const error = new Error(message);
+      error.status = response.status;
+      error.details = payload;
+      throw error;
+    }
+
+    return payload;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    
+    if (error.name === 'AbortError') {
+      const timeoutError = new Error('Stripe API request timed out. Please try again.');
+      timeoutError.status = 504;
+      throw timeoutError;
+    }
+    
     throw error;
   }
-
-  return payload;
 };
 
 const createNotificationPaymentIntentRecord = async ({

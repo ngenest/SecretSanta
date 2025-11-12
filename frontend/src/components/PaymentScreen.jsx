@@ -149,64 +149,69 @@ export default function PaymentScreen({
 
         elementsRef.current = elements;
 
-        expressElement = elements.create('expressCheckout', {
-          layout: {
-            type: 'tabs',
-            defaultCollapsed: false,
-          },
-          buttonHeight: 44,
-          paymentMethodOrder: ['apple_pay', 'google_pay', 'link', 'paypal', 'amazon_pay'],
-          walletCollections: ['apple_pay', 'google_pay', 'paypal', 'link', 'amazon_pay'],
-        });
+        try {
+          expressElement = elements.create('expressCheckout', {
+            layout: {
+              type: 'tabs',
+              defaultCollapsed: false,
+            },
+            buttonHeight: 44,
+            paymentMethodOrder: ['apple_pay', 'google_pay', 'link', 'paypal', 'amazon_pay'],
+            walletCollections: ['apple_pay', 'google_pay', 'paypal', 'link', 'amazon_pay'],
+          });
 
-        expressElement.on('ready', () => {
-          if (!isSubscribed) return;
-          setHasExpressCheckout(true);
-        });
+          expressElement.on('ready', () => {
+            if (!isSubscribed) return;
+            setHasExpressCheckout(true);
+          });
 
-        expressElement.on('confirm', async (event) => {
-          setErrorMessage('');
-          setIsProcessing(true);
-          try {
-            const { error, paymentIntent } = await stripe.confirmPayment({
-              elements,
-              confirmParams: {
-                return_url: window.location.href,
-                receipt_email: organizerEmail || undefined,
-              },
-              redirect: 'if_required',
-            });
+          expressElement.on('confirm', async (event) => {
+            setErrorMessage('');
+            setIsProcessing(true);
+            try {
+              const { error, paymentIntent } = await stripe.confirmPayment({
+                elements,
+                confirmParams: {
+                  return_url: window.location.href,
+                  receipt_email: organizerEmail || undefined,
+                },
+                redirect: 'if_required',
+              });
 
-            if (error) {
+              if (error) {
+                event.complete('fail');
+                handleStripeError(error.message);
+                return;
+              }
+
+              if (paymentIntent?.status === 'succeeded') {
+                event.complete('success');
+                onSuccess?.(paymentIntent);
+                return;
+              }
+
               event.complete('fail');
-              handleStripeError(error.message);
-              return;
+              handleStripeError('Payment was not completed.');
+            } catch (error) {
+              console.error('Express checkout confirmation failed', error);
+              event.complete('fail');
+              const message =
+                error instanceof Error && error.message.includes('JSON')
+                  ? 'Payment service is temporarily unavailable. Please try again in a moment.'
+                  : error instanceof Error
+                  ? error.message
+                  : 'Payment could not be completed.';
+              handleStripeError(message);
+            } finally {
+              if (isSubscribed) {
+                setIsProcessing(false);
+              }
             }
-
-            if (paymentIntent?.status === 'succeeded') {
-              event.complete('success');
-              onSuccess?.(paymentIntent);
-              return;
-            }
-
-            event.complete('fail');
-            handleStripeError('Payment was not completed.');
-          } catch (error) {
-            console.error('Express checkout confirmation failed', error);
-            event.complete('fail');
-            const message =
-              error instanceof Error && error.message.includes('JSON')
-                ? 'Payment service is temporarily unavailable. Please try again in a moment.'
-                : error instanceof Error
-                ? error.message
-                : 'Payment could not be completed.';
-            handleStripeError(message);
-          } finally {
-            if (isSubscribed) {
-              setIsProcessing(false);
-            }
-          }
-        });
+          });
+        } catch (error) {
+          console.info('Express checkout not available', error);
+          expressElement = null;
+        }
 
         paymentElement = elements.create('payment', {
           layout: 'tabs',
@@ -228,7 +233,7 @@ export default function PaymentScreen({
           setErrorMessage('');
         });
 
-        if (expressCheckoutRef.current) {
+        if (expressElement && expressCheckoutRef.current) {
           expressElement.mount(expressCheckoutRef.current);
         }
 
@@ -355,13 +360,17 @@ export default function PaymentScreen({
 
             {canRenderPaymentForm && (
               <form className="payment-modal__form" onSubmit={handleSubmit}>
+                <div
+                  className={`payment-modal__express${
+                    hasExpressCheckout ? '' : ' payment-modal__express--inactive'
+                  }`}
+                  ref={expressCheckoutRef}
+                  aria-hidden={!hasExpressCheckout}
+                />
                 {hasExpressCheckout && (
-                  <>
-                    <div className="payment-modal__express" ref={expressCheckoutRef} />
-                    <div className="payment-modal__divider" aria-hidden="true">
-                      <span>or pay with card</span>
-                    </div>
-                  </>
+                  <div className="payment-modal__divider" aria-hidden="true">
+                    <span>or pay with card</span>
+                  </div>
                 )}
                 <div className="payment-modal__element" ref={paymentElementRef}>
                   {!isReady && <p className="payment-modal__loading">Loading payment options…</p>}

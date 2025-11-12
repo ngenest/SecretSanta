@@ -1805,6 +1805,14 @@ textarea {
   min-height: 48px;
 }
 
+.payment-modal__express--inactive {
+  height: 0;
+  min-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .payment-modal__divider {
   display: flex;
   align-items: center;

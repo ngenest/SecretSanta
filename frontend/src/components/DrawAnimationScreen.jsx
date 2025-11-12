@@ -27,6 +27,7 @@ export default function DrawAnimationScreen({
   notificationPromptVisible,
   onNotificationConfirm,
   notificationsSending = false,
+  paymentSetupInProgress = false,
   notificationError = '',
   onCancelDrawConfirmed
 }) {
@@ -170,15 +171,19 @@ export default function DrawAnimationScreen({
                 type="button"
                 className="primary"
                 onClick={onNotificationConfirm}
-                disabled={notificationsSending}
+                disabled={notificationsSending || paymentSetupInProgress}
               >
-                {notificationsSending ? 'Processing…' : 'Yes'}
+                {notificationsSending
+                  ? 'Sending…'
+                  : paymentSetupInProgress
+                  ? 'Preparing payment…'
+                  : 'Yes'}
               </button>
               <button
                 type="button"
                 className="secondary"
                 onClick={() => setShowCancelOverlay(true)}
-                disabled={notificationsSending}
+                disabled={notificationsSending || paymentSetupInProgress}
               >
                 No
               </button>

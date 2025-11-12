@@ -1,4 +1,4 @@
-const steps = ['Event Setup', 'Draw', 'Confirmation'];
+const steps = ['Event Setup', 'Draw', 'Payment', 'Confirmation'];
 
 export default function ProgressDots({ activeIndex }) {
   return (

@@ -67,6 +67,10 @@ export default function PaymentModal({
           return;
         }
 
+        if (!stripe) {
+          throw new Error('Failed to load Stripe. Please check your internet connection and try again.');
+        }
+
         stripeRef.current = stripe;
         const elements = stripe.elements({
           clientSecret,
@@ -156,9 +160,10 @@ export default function PaymentModal({
           } catch (error) {
             console.error('Express checkout confirmation failed', error);
             event.complete('fail');
-            handleStripeError(
-              error instanceof Error ? error.message : 'Payment could not be completed.'
-            );
+            const message = error instanceof Error && error.message.includes('JSON')
+              ? 'Payment service is temporarily unavailable. Please try again in a moment.'
+              : error instanceof Error ? error.message : 'Payment could not be completed.';
+            handleStripeError(message);
           } finally {
             if (isSubscribed) {
               setIsProcessing(false);
@@ -197,9 +202,10 @@ export default function PaymentModal({
       } catch (error) {
         console.error('Failed to initialize Stripe elements', error);
         if (!isSubscribed) return;
-        handleStripeError(
-          error instanceof Error ? error.message : 'Unable to initialize the payment form.'
-        );
+        const message = error instanceof Error && (error.message.includes('JSON') || error.message.includes('504'))
+          ? 'Payment service is temporarily unavailable. Please check your internet connection and try again.'
+          : error instanceof Error ? error.message : 'Unable to initialize the payment form.';
+        handleStripeError(message);
       }
     };
 
@@ -253,7 +259,10 @@ export default function PaymentModal({
       handleStripeError('Payment was not completed.');
     } catch (error) {
       console.error('Payment confirmation failed', error);
-      handleStripeError(error instanceof Error ? error.message : undefined);
+      const message = error instanceof Error && (error.message.includes('JSON') || error.message.includes('504'))
+        ? 'Payment service is temporarily unavailable. Please try again in a moment.'
+        : error instanceof Error ? error.message : 'Payment could not be completed.';
+      handleStripeError(message);
     } finally {
       setIsProcessing(false);
     }

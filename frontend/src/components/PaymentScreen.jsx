@@ -66,6 +66,16 @@ export default function PaymentScreen({
   const elementsRef = useRef(null);
   const paymentElementRef = useRef(null);
   const expressCheckoutRef = useRef(null);
+  const onErrorRef = useRef(onError);
+  const onSuccessRef = useRef(onSuccess);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
 
   const displayAmount = useMemo(
     () => formatCurrency(NOTIFICATION_PAYMENT_AMOUNT_CENTS, NOTIFICATION_PAYMENT_CURRENCY),
@@ -78,7 +88,7 @@ export default function PaymentScreen({
     const fallback = 'We were unable to process your payment. Please try again.';
     const displayMessage = message?.trim() || fallback;
     setErrorMessage(displayMessage);
-    onError?.(displayMessage);
+    onErrorRef.current?.(displayMessage);
   };
 
   useEffect(() => {
@@ -186,7 +196,7 @@ export default function PaymentScreen({
 
               if (paymentIntent?.status === 'succeeded') {
                 event.complete('success');
-                onSuccess?.(paymentIntent);
+                onSuccessRef.current?.(paymentIntent);
                 return;
               }
 
@@ -258,17 +268,33 @@ export default function PaymentScreen({
     return () => {
       isSubscribed = false;
       if (paymentElement) {
-        paymentElement.destroy();
+        try {
+          if (typeof paymentElement.destroy === 'function') {
+            paymentElement.destroy();
+          } else if (typeof paymentElement.unmount === 'function') {
+            paymentElement.unmount();
+          }
+        } catch (error) {
+          console.warn('Failed to clean up Stripe payment element', error);
+        }
       }
       if (expressElement) {
-        expressElement.destroy();
+        try {
+          if (typeof expressElement.destroy === 'function') {
+            expressElement.destroy();
+          } else if (typeof expressElement.unmount === 'function') {
+            expressElement.unmount();
+          }
+        } catch (error) {
+          console.warn('Failed to clean up Stripe express checkout element', error);
+        }
       }
       elementsRef.current = null;
       stripeRef.current = null;
       setHasExpressCheckout(false);
       setIsReady(false);
     };
-  }, [clientSecret, completedPaymentIntentId, organizerEmail, onError, onSuccess]);
+  }, [clientSecret, completedPaymentIntentId, organizerEmail]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -296,7 +322,7 @@ export default function PaymentScreen({
       }
 
       if (paymentIntent?.status === 'succeeded') {
-        onSuccess?.(paymentIntent);
+        onSuccessRef.current?.(paymentIntent);
         return;
       }
 

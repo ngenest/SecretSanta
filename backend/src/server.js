@@ -263,6 +263,13 @@ const NOTIFICATION_PAYMENT_AMOUNT_CENTS = 199;
 const NOTIFICATION_PAYMENT_CURRENCY = 'usd';
 const isStripeConfigured = Boolean(STRIPE_SECRET_KEY);
 
+// Log Stripe configuration status on startup
+if (isStripeConfigured) {
+  console.log('✓ Stripe configured');
+} else {
+  console.warn('⚠ Stripe not configured - payment processing unavailable');
+}
+
 const normalizeAckBaseUrl = (value) => {
   if (!value || typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -465,7 +472,8 @@ const stripeRequest = async (endpoint, { method = 'GET', body } = {}) => {
   }
 
   const headers = {
-    Authorization: `Bearer ${STRIPE_SECRET_KEY}`
+    Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+    'Stripe-Version': '2023-10-16'
   };
 
   let requestBody;
@@ -481,6 +489,9 @@ const stripeRequest = async (endpoint, { method = 'GET', body } = {}) => {
   const timeoutId = setTimeout(() => controller.abort(), STRIPE_TIMEOUT_MS);
 
   try {
+    console.log(`Stripe API: ${method} ${endpoint}`);
+    const startTime = Date.now();
+    
     const response = await fetch(`${STRIPE_API_BASE}${endpoint}`, {
       method,
       headers,
@@ -489,6 +500,8 @@ const stripeRequest = async (endpoint, { method = 'GET', body } = {}) => {
     });
 
     clearTimeout(timeoutId);
+    const duration = Date.now() - startTime;
+    console.log(`Stripe API: ${method} ${endpoint} - ${response.status} (${duration}ms)`);
 
     let payload = {};
     const contentType = response.headers.get('content-type') || '';
@@ -510,6 +523,7 @@ const stripeRequest = async (endpoint, { method = 'GET', body } = {}) => {
 
     if (!response.ok) {
       const message = payload?.error?.message || 'Stripe request failed.';
+      console.error('Stripe API error:', message, payload);
       const error = new Error(message);
       error.status = response.status;
       error.details = payload;
@@ -521,9 +535,17 @@ const stripeRequest = async (endpoint, { method = 'GET', body } = {}) => {
     clearTimeout(timeoutId);
     
     if (error.name === 'AbortError') {
+      console.error(`Stripe API timeout after ${STRIPE_TIMEOUT_MS}ms: ${method} ${endpoint}`);
       const timeoutError = new Error('Stripe API request timed out. Please try again.');
       timeoutError.status = 504;
       throw timeoutError;
+    }
+    
+    if (error.cause?.code === 'ENOTFOUND' || error.cause?.code === 'ECONNREFUSED') {
+      console.error('Network error connecting to Stripe:', error.cause);
+      const networkError = new Error('Unable to connect to payment service. Please check your internet connection.');
+      networkError.status = 503;
+      throw networkError;
     }
     
     throw error;
@@ -1130,6 +1152,7 @@ app.post('/api/draw', async (req, res) => {
 
 app.post('/api/payments/create-intent', async (req, res) => {
   if (!isStripeConfigured) {
+    console.warn('Payment intent creation attempted but Stripe not configured');
     return res.status(503).json({ error: 'Payment processing is temporarily unavailable.' });
   }
 
@@ -1144,6 +1167,7 @@ app.post('/api/payments/create-intent', async (req, res) => {
   }
 
   try {
+    console.log('Creating payment intent for batch:', batchId);
     const paymentIntent = await createNotificationPaymentIntentRecord({
       batchId,
       eventName: req.body?.eventName,
@@ -1154,6 +1178,7 @@ app.post('/api/payments/create-intent', async (req, res) => {
       throw new Error('Stripe did not return a client secret.');
     }
 
+    console.log('Payment intent created:', paymentIntent.id);
     res.json({ clientSecret: paymentIntent.client_secret });
   } catch (error) {
     console.error('Failed to create payment intent', error);

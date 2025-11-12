@@ -4,13 +4,14 @@ import DrawAnimationScreen from './components/DrawAnimationScreen.jsx';
 import ConfirmationScreen from './components/ConfirmationScreen.jsx';
 import Header from './components/Header.jsx';
 import ProgressDots from './components/ProgressDots.jsx';
-import PaymentModal from './components/PaymentModal.jsx';
+import PaymentScreen from './components/PaymentScreen.jsx';
 import { createDraw, createNotificationPaymentIntent, sendNotifications } from './lib/api';
 
 const SCREENS = {
   setup: 0,
   draw: 1,
-  confirmation: 2
+  payment: 2,
+  confirmation: 3
 };
 
 const generateId = () =>
@@ -55,7 +56,6 @@ export default function App() {
   const [isSendingNotifications, setIsSendingNotifications] = useState(false);
   const [notificationError, setNotificationError] = useState('');
   const [paymentIntentClientSecret, setPaymentIntentClientSecret] = useState('');
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isCreatingPaymentIntent, setIsCreatingPaymentIntent] = useState(false);
   const [completedPaymentIntentId, setCompletedPaymentIntentId] = useState('');
 
@@ -79,7 +79,6 @@ export default function App() {
     setNotificationError('');
     setIsSendingNotifications(false);
     setPaymentIntentClientSecret('');
-    setIsPaymentModalOpen(false);
     setIsCreatingPaymentIntent(false);
     setCompletedPaymentIntentId('');
     try {
@@ -111,7 +110,6 @@ export default function App() {
     setNotificationError('');
     setIsSendingNotifications(false);
     setPaymentIntentClientSecret('');
-    setIsPaymentModalOpen(false);
     setIsCreatingPaymentIntent(false);
     setCompletedPaymentIntentId('');
   };
@@ -152,11 +150,6 @@ export default function App() {
       return false;
     }
 
-    if (completedPaymentIntentId) {
-      await triggerNotificationSend(completedPaymentIntentId);
-      return true;
-    }
-
     setNotificationError('');
     setIsCreatingPaymentIntent(true);
 
@@ -168,11 +161,13 @@ export default function App() {
       });
 
       setPaymentIntentClientSecret(response.clientSecret);
-      setIsPaymentModalOpen(true);
+      setShowNotificationPrompt(false);
+      setScreenIndex(SCREENS.payment);
       return true;
     } catch (error) {
       console.error(error);
-      setNotificationError(error.message || 'Unable to start the payment process.');
+      const message = error?.message || 'Unable to start the payment process.';
+      setNotificationError(message);
       return false;
     } finally {
       setIsCreatingPaymentIntent(false);
@@ -189,9 +184,45 @@ export default function App() {
     setNotificationError('');
     setIsSendingNotifications(false);
     setPaymentIntentClientSecret('');
-    setIsPaymentModalOpen(false);
     setIsCreatingPaymentIntent(false);
     setCompletedPaymentIntentId('');
+  };
+
+  const handlePaymentCanceled = () => {
+    setPaymentIntentClientSecret('');
+    setCompletedPaymentIntentId('');
+    setNotificationError('');
+    setScreenIndex(SCREENS.draw);
+    setShowNotificationPrompt(true);
+  };
+
+  const handlePaymentError = (message) => {
+    if (message) {
+      setNotificationError(message);
+    }
+  };
+
+  const handlePaymentSuccess = (paymentIntent) => {
+    if (!paymentIntent?.id) {
+      return;
+    }
+
+    setCompletedPaymentIntentId(paymentIntent.id);
+    setPaymentIntentClientSecret('');
+    triggerNotificationSend(paymentIntent.id);
+  };
+
+  const handleRetryNotifications = (paymentIntentId) => {
+    const intentId = paymentIntentId || completedPaymentIntentId;
+
+    if (!intentId) {
+      setNotificationError(
+        'We could not locate a completed payment. Please try submitting payment again.'
+      );
+      return;
+    }
+
+    triggerNotificationSend(intentId);
   };
 
   const participantList =
@@ -217,9 +248,26 @@ export default function App() {
           onComplete={() => setIsAnimationComplete(true)}
           notificationPromptVisible={showNotificationPrompt}
           onNotificationConfirm={handleNotificationConfirmed}
-          notificationsSending={isSendingNotifications || isCreatingPaymentIntent}
+          notificationsSending={isSendingNotifications}
+          paymentSetupInProgress={isCreatingPaymentIntent}
           notificationError={notificationError}
           onCancelDrawConfirmed={handleDrawCancellation}
+        />
+      )}
+      {screenIndex === SCREENS.payment && (
+        <PaymentScreen
+          clientSecret={paymentIntentClientSecret}
+          organizerName={eventData.organizer?.name}
+          organizerEmail={eventData.organizer?.email}
+          eventName={eventData.name}
+          participants={participantList}
+          onCancel={handlePaymentCanceled}
+          onSuccess={handlePaymentSuccess}
+          onError={handlePaymentError}
+          onRetryNotifications={handleRetryNotifications}
+          isSendingNotifications={isSendingNotifications}
+          notificationError={notificationError}
+          completedPaymentIntentId={completedPaymentIntentId}
         />
       )}
       {screenIndex === SCREENS.confirmation && (
@@ -231,28 +279,6 @@ export default function App() {
           participants={participantList}
           assignments={assignments}
           onRestart={handleRestart}
-        />
-      )}
-      {isPaymentModalOpen && (
-        <PaymentModal
-          clientSecret={paymentIntentClientSecret}
-          organizerName={eventData.organizer?.name}
-          organizerEmail={eventData.organizer?.email}
-          onClose={() => {
-            setIsPaymentModalOpen(false);
-            setPaymentIntentClientSecret('');
-          }}
-          onSuccess={(paymentIntent) => {
-            setIsPaymentModalOpen(false);
-            setPaymentIntentClientSecret('');
-            if (paymentIntent?.id) {
-              setCompletedPaymentIntentId(paymentIntent.id);
-              triggerNotificationSend(paymentIntent.id);
-            }
-          }}
-          onError={(message) => {
-            setNotificationError(message);
-          }}
         />
       )}
     </div>

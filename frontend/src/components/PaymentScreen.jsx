@@ -60,6 +60,7 @@ export default function PaymentScreen({
   const [isReady, setIsReady] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [setupError, setSetupError] = useState(false);
   const [hasExpressCheckout, setHasExpressCheckout] = useState(false);
 
   const stripeRef = useRef(null);
@@ -84,10 +85,13 @@ export default function PaymentScreen({
 
   const contactSummaries = useMemo(() => buildContactSummaries(participants), [participants]);
 
-  const handleStripeError = (message) => {
+  const handleStripeError = (message, { isSetupError = false } = {}) => {
     const fallback = 'We were unable to process your payment. Please try again.';
     const displayMessage = message?.trim() || fallback;
     setErrorMessage(displayMessage);
+    if (isSetupError) {
+      setSetupError(true);
+    }
     onErrorRef.current?.(displayMessage);
   };
 
@@ -96,6 +100,7 @@ export default function PaymentScreen({
       setIsReady(false);
       setHasExpressCheckout(false);
       setErrorMessage('');
+      setSetupError(false);
       return undefined;
     }
 
@@ -113,6 +118,8 @@ export default function PaymentScreen({
         if (!stripe) {
           throw new Error('Failed to load Stripe. Please check your internet connection and try again.');
         }
+
+        setSetupError(false);
 
         stripeRef.current = stripe;
         const elements = stripe.elements({
@@ -259,7 +266,7 @@ export default function PaymentScreen({
             : error instanceof Error
             ? error.message
             : 'Unable to initialize the payment form.';
-        handleStripeError(message);
+        handleStripeError(message, { isSetupError: true });
       }
     };
 
@@ -299,7 +306,7 @@ export default function PaymentScreen({
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!stripeRef.current || !elementsRef.current) {
-      handleStripeError('Payment form is not ready yet.');
+      handleStripeError('Payment form is not ready yet.', { isSetupError: true });
       return;
     }
 
@@ -342,7 +349,7 @@ export default function PaymentScreen({
   };
 
   const paymentCompleted = Boolean(completedPaymentIntentId);
-  const canRenderPaymentForm = Boolean(clientSecret) && !paymentCompleted;
+  const canRenderPaymentForm = Boolean(clientSecret) && !paymentCompleted && !setupError;
 
   return (
     <main className="screen screen-payment">

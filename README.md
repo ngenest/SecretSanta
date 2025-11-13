@@ -1,6 +1,6 @@
 # Secret Santa Magic
 
-A festive Secret Santa web experience for orchestrating a gift exchange among four couples. The project provides a React front-end with animated funnel screens and a Node.js backend that performs draw logic and dispatches participant emails.
+A festive Secret Santa web experience for orchestrating a gift exchange among individuals or couples. The project provides a React front-end with animated funnel screens and a Node.js backend that performs draw logic and dispatches participant emails.
 
 ## Features
 

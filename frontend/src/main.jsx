@@ -14,6 +14,4 @@ const isAcknowledgementRoute = () => {
 };
 
 const rootComponent = isAcknowledgementRoute() ? <AcknowledgementLanding /> : <App />;
-const appShell = import.meta.env.DEV ? rootComponent : <React.StrictMode>{rootComponent}</React.StrictMode>;
-
-ReactDOM.createRoot(document.getElementById('root')).render(appShell);
+ReactDOM.createRoot(document.getElementById('root')).render(rootComponent);

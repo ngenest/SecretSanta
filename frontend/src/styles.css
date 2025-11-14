@@ -896,6 +896,16 @@ textarea {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
 
+.payment-reference {
+  font-size: 1rem;
+  color: #0b6623;
+  background: rgba(255, 255, 255, 0.75);
+  padding: 0.75rem 1.25rem;
+  border-radius: 16px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  font-weight: 600;
+}
+
 .participant-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

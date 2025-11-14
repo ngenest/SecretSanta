@@ -93,6 +93,7 @@ export default function ConfirmationScreen({
   secretSantaRules = '',
   participants,
   assignments = [],
+  paymentIntentId = '',
   onRestart
 }) {
   const [showOverlay, setShowOverlay] = useState(false);
@@ -147,13 +148,16 @@ export default function ConfirmationScreen({
       </motion.h1>
       <section className="confirmation-content">
         <p className="success-message">
-          Email and SMS notifications are on their merry way to every participant.
+          Thank you for your payment! Email and SMS notifications have been sent to every participant.
           Every time one of them confirms receipt by clicking their link, you, as
           the organizer, will be notified. You can then remain the great leader you
           have been so far!
 
           Happy Holidays!
         </p>
+        {paymentIntentId && (
+          <p className="payment-reference">Payment reference: {paymentIntentId}</p>
+        )}
         <div className="participant-list">
           {participants.map((participant, index) => (
             <motion.div

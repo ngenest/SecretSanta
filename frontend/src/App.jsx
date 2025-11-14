@@ -214,20 +214,28 @@ export default function App() {
     setLastPaymentIntentId('');
   };
 
-  const handlePaymentCanceled = () => {
+  const resetToDrawAfterPayment = (errorMessage = '') => {
     setCheckoutClientSecret('');
     setCheckoutSessionId('');
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
-    setNotificationError('');
+    setIsCreatingCheckoutSession(false);
+    setIsSendingNotifications(false);
     setScreenIndex(SCREENS.draw);
-    setShowNotificationPrompt(true);
+    setShowNotificationPrompt(isAnimationComplete && areAssignmentsReady);
+    setNotificationError(errorMessage);
+  };
+
+  const handlePaymentCanceled = () => {
+    resetToDrawAfterPayment('');
   };
 
   const handlePaymentError = (message) => {
-    if (message) {
-      setNotificationError(message);
-    }
+    const fallbackMessage =
+      typeof message === 'string' && message.trim().length > 0
+        ? message
+        : 'We were unable to complete the payment. Please try again.';
+    resetToDrawAfterPayment(fallbackMessage);
   };
 
   const handlePaymentSuccess = ({ sessionId, paymentIntentId } = {}) => {

@@ -11,14 +11,12 @@ const formatCurrency = (amountCents, currency) => {
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
       currency,
-    }).format(amountCents / 100);
+    }).format((amountCents || 0) / 100);
   } catch (error) {
     console.warn('Failed to format currency', error);
-    return `$${(amountCents / 100).toFixed(2)}`;
+    return `$${((amountCents || 0) / 100).toFixed(2)}`;
   }
 };
-
-const PAYMENT_DESCRIPTION = 'Secret Santa notification delivery';
 
 const buildContactSummaries = (participants = []) =>
   participants.map((participant, index) => {
@@ -43,8 +41,45 @@ const buildContactSummaries = (participants = []) =>
     return `${name} does not have contact information on file.`;
   });
 
+const extractPaymentIntentId = (eventPayload) => {
+  if (!eventPayload) {
+    return '';
+  }
+
+  if (typeof eventPayload === 'string') {
+    return eventPayload;
+  }
+
+  if (typeof eventPayload === 'object') {
+    if (typeof eventPayload.payment_intent === 'string') {
+      return eventPayload.payment_intent;
+    }
+    if (typeof eventPayload.paymentIntentId === 'string') {
+      return eventPayload.paymentIntentId;
+    }
+
+    const nested = eventPayload.detail || eventPayload.data || eventPayload.payload;
+    if (typeof nested === 'string') {
+      return nested;
+    }
+    if (nested && typeof nested === 'object') {
+      if (typeof nested.payment_intent === 'string') {
+        return nested.payment_intent;
+      }
+      if (typeof nested.paymentIntentId === 'string') {
+        return nested.paymentIntentId;
+      }
+    }
+  }
+
+  return '';
+};
+
+const PAYMENT_DESCRIPTION = 'Secret Santa notification delivery';
+
 export default function PaymentScreen({
   clientSecret,
+  checkoutSessionId,
   organizerName,
   organizerEmail,
   eventName,
@@ -55,28 +90,29 @@ export default function PaymentScreen({
   onRetryNotifications,
   isSendingNotifications = false,
   notificationError = '',
-  completedPaymentIntentId = '',
+  completedCheckoutSessionId = '',
+  paymentIntentId = '',
 }) {
-  const [isReady, setIsReady] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [status, setStatus] = useState('idle');
   const [errorMessage, setErrorMessage] = useState('');
-  const [setupError, setSetupError] = useState(false);
-  const [hasExpressCheckout, setHasExpressCheckout] = useState(false);
 
-  const stripeRef = useRef(null);
-  const elementsRef = useRef(null);
-  const paymentElementRef = useRef(null);
-  const expressCheckoutRef = useRef(null);
-  const onErrorRef = useRef(onError);
-  const onSuccessRef = useRef(onSuccess);
+  const containerRef = useRef(null);
+  const checkoutRef = useRef(null);
+  const cancelRef = useRef(onCancel);
+  const successRef = useRef(onSuccess);
+  const errorRef = useRef(onError);
 
   useEffect(() => {
-    onErrorRef.current = onError;
-  }, [onError]);
+    cancelRef.current = onCancel;
+  }, [onCancel]);
 
   useEffect(() => {
-    onSuccessRef.current = onSuccess;
+    successRef.current = onSuccess;
   }, [onSuccess]);
+
+  useEffect(() => {
+    errorRef.current = onError;
+  }, [onError]);
 
   const displayAmount = useMemo(
     () => formatCurrency(NOTIFICATION_PAYMENT_AMOUNT_CENTS, NOTIFICATION_PAYMENT_CURRENCY),
@@ -85,288 +121,208 @@ export default function PaymentScreen({
 
   const contactSummaries = useMemo(() => buildContactSummaries(participants), [participants]);
 
-  const handleStripeError = (message, { isSetupError = false } = {}) => {
-    const fallback = 'We were unable to process your payment. Please try again.';
-    const displayMessage = message?.trim() || fallback;
-    setErrorMessage(displayMessage);
-    if (isSetupError) {
-      setSetupError(true);
-    }
-    onErrorRef.current?.(displayMessage);
-  };
+  const paymentCompleted = Boolean(completedCheckoutSessionId);
+  const canRenderCheckout = Boolean(clientSecret && checkoutSessionId && !paymentCompleted);
 
   useEffect(() => {
-    if (!clientSecret || completedPaymentIntentId) {
-      setIsReady(false);
-      setHasExpressCheckout(false);
+    if (paymentCompleted) {
+      setStatus('complete');
+    }
+  }, [paymentCompleted]);
+
+  useEffect(() => {
+    if (!canRenderCheckout) {
       setErrorMessage('');
-      setSetupError(false);
+      if (!paymentCompleted) {
+        setStatus('idle');
+      }
+      if (checkoutRef.current) {
+        try {
+          if (typeof checkoutRef.current.destroy === 'function') {
+            checkoutRef.current.destroy();
+          } else if (typeof checkoutRef.current.unmount === 'function') {
+            checkoutRef.current.unmount();
+          }
+        } catch (error) {
+          console.warn('Failed to clean up checkout instance', error);
+        }
+        checkoutRef.current = null;
+      }
       return undefined;
     }
 
-    let isSubscribed = true;
-    let paymentElement;
-    let expressElement;
+    let isMounted = true;
+    let checkoutInstance = null;
+    const listeners = [];
 
-    const setupStripe = async () => {
+    const detachAll = () => {
+      if (!checkoutInstance) return;
+      listeners.forEach(({ type, handler }) => {
+        try {
+          if (typeof checkoutInstance.removeEventListener === 'function') {
+            checkoutInstance.removeEventListener(type, handler);
+          } else if (typeof checkoutInstance.off === 'function') {
+            checkoutInstance.off(type, handler);
+          }
+        } catch (error) {
+          console.warn('Failed to detach checkout listener', type, error);
+        }
+      });
+    };
+
+    const attachListener = (type, handler) => {
+      if (!checkoutInstance || typeof handler !== 'function') return;
+      try {
+        if (typeof checkoutInstance.addEventListener === 'function') {
+          checkoutInstance.addEventListener(type, handler);
+          listeners.push({ type, handler });
+        } else if (typeof checkoutInstance.on === 'function') {
+          checkoutInstance.on(type, handler);
+          listeners.push({ type, handler });
+        }
+      } catch (error) {
+        console.warn('Failed to attach checkout listener', type, error);
+      }
+    };
+
+    const initializeCheckout = async () => {
+      setStatus('loading');
+      setErrorMessage('');
+
       try {
         const stripe = await loadStripeInstance(STRIPE_PUBLISHABLE_KEY);
-        if (!isSubscribed) {
+        if (!isMounted) {
           return;
         }
 
-        if (!stripe) {
-          throw new Error('Failed to load Stripe. Please check your internet connection and try again.');
+        if (!stripe || typeof stripe.initEmbeddedCheckout !== 'function') {
+          throw new Error('Stripe Checkout is unavailable. Please refresh and try again.');
         }
 
-        setSetupError(false);
-
-        stripeRef.current = stripe;
-        const elements = stripe.elements({
-          clientSecret,
-          appearance: {
-            theme: 'flat',
-            variables: {
-              colorPrimary: '#B71C1C',
-              colorText: '#1F2937',
-              borderRadius: '12px',
-              fontFamily:
-                '"Nunito", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-            },
-            rules: {
-              '.Label': {
-                fontWeight: '600',
-              },
-              '.Input': {
-                padding: '14px 12px',
-              },
-              '.Error': {
-                marginTop: '8px',
-              },
-              '.Tab': {
-                borderRadius: '12px',
-                padding: '10px 14px',
-              },
-              '.SubmitButton': {
-                fontSize: '16px',
-                fontWeight: '700',
-                padding: '12px 16px',
-              },
-            },
-          },
-          fields: {
-            billingDetails: {
-              address: 'auto',
-              email: 'never',
-              name: 'never',
-              phone: 'never',
-            },
-          },
-        });
-
-        elementsRef.current = elements;
-
-        try {
-          expressElement = elements.create('expressCheckout', {
-            layout: {
-              type: 'tabs',
-              defaultCollapsed: false,
-            },
-            buttonHeight: 44,
-            paymentMethodOrder: ['apple_pay', 'google_pay', 'link', 'paypal', 'amazon_pay'],
-            walletCollections: ['apple_pay', 'google_pay', 'paypal', 'link', 'amazon_pay'],
-          });
-
-          expressElement.on('ready', () => {
-            if (!isSubscribed) return;
-            setHasExpressCheckout(true);
-          });
-
-          expressElement.on('confirm', async (event) => {
-            setErrorMessage('');
-            setIsProcessing(true);
-            try {
-              const { error, paymentIntent } = await stripe.confirmPayment({
-                elements,
-                confirmParams: {
-                  return_url: window.location.href,
-                  receipt_email: organizerEmail || undefined,
-                },
-                redirect: 'if_required',
-              });
-
-              if (error) {
-                event.complete('fail');
-                handleStripeError(error.message);
-                return;
-              }
-
-              if (paymentIntent?.status === 'succeeded') {
-                event.complete('success');
-                onSuccessRef.current?.(paymentIntent);
-                return;
-              }
-
-              event.complete('fail');
-              handleStripeError('Payment was not completed.');
-            } catch (error) {
-              console.error('Express checkout confirmation failed', error);
-              event.complete('fail');
-              const message =
-                error instanceof Error && error.message.includes('JSON')
-                  ? 'Payment service is temporarily unavailable. Please try again in a moment.'
-                  : error instanceof Error
-                  ? error.message
-                  : 'Payment could not be completed.';
-              handleStripeError(message);
-            } finally {
-              if (isSubscribed) {
-                setIsProcessing(false);
-              }
+        checkoutInstance = await stripe.initEmbeddedCheckout({ clientSecret });
+        if (!isMounted) {
+          if (checkoutInstance) {
+            if (typeof checkoutInstance.destroy === 'function') {
+              checkoutInstance.destroy();
+            } else if (typeof checkoutInstance.unmount === 'function') {
+              checkoutInstance.unmount();
             }
-          });
-        } catch (error) {
-          console.info('Express checkout not available', error);
-          expressElement = null;
+          }
+          return;
         }
 
-        paymentElement = elements.create('payment', {
-          layout: 'tabs',
-          defaultValues: organizerEmail
-            ? {
-                billingDetails: {
-                  email: organizerEmail,
-                },
-              }
-            : undefined,
+        checkoutRef.current = checkoutInstance;
+
+        attachListener('ready', () => {
+          if (!isMounted) return;
+          setStatus('ready');
         });
 
-        paymentElement.on('ready', () => {
-          if (!isSubscribed) return;
-          setIsReady(true);
-        });
-
-        paymentElement.on('change', () => {
+        attachListener('change', () => {
+          if (!isMounted) return;
           setErrorMessage('');
         });
 
-        if (expressElement && expressCheckoutRef.current) {
-          expressElement.mount(expressCheckoutRef.current);
+        attachListener('submit', () => {
+          if (!isMounted) return;
+          setStatus('processing');
+          setErrorMessage('');
+        });
+
+        attachListener('cancel', () => {
+          if (!isMounted) return;
+          setStatus('ready');
+          cancelRef.current?.();
+        });
+
+        attachListener('error', (event) => {
+          if (!isMounted) return;
+          const message =
+            event?.detail?.message ||
+            event?.error?.message ||
+            event?.message ||
+            'We were unable to complete the checkout. Please try again.';
+          setStatus('error');
+          setErrorMessage(message);
+          errorRef.current?.(message);
+        });
+
+        attachListener('complete', (event) => {
+          if (!isMounted) return;
+          setStatus('complete');
+          const intentId = extractPaymentIntentId(event);
+          successRef.current?.({
+            sessionId: checkoutSessionId,
+            paymentIntentId: intentId,
+          });
+        });
+
+        if (!containerRef.current) {
+          throw new Error('Unable to mount checkout. Please refresh and try again.');
         }
 
-        if (paymentElementRef.current) {
-          paymentElement.mount(paymentElementRef.current);
-        }
+        checkoutInstance.mount(containerRef.current);
       } catch (error) {
-        console.error('Failed to initialize Stripe elements', error);
-        if (!isSubscribed) return;
+        console.error('Failed to initialize Stripe Checkout', error);
+        if (!isMounted) {
+          return;
+        }
         const message =
-          error instanceof Error && (error.message.includes('JSON') || error.message.includes('504'))
-            ? 'Payment service is temporarily unavailable. Please check your internet connection and try again.'
-            : error instanceof Error
+          error instanceof Error && error.message
             ? error.message
-            : 'Unable to initialize the payment form.';
-        handleStripeError(message, { isSetupError: true });
+            : 'We could not load the checkout form. Please try again.';
+        setStatus('error');
+        setErrorMessage(message);
+        errorRef.current?.(message);
       }
     };
 
-    setupStripe();
+    initializeCheckout();
 
     return () => {
-      isSubscribed = false;
-      if (paymentElement) {
+      isMounted = false;
+      detachAll();
+      if (checkoutInstance) {
         try {
-          if (typeof paymentElement.destroy === 'function') {
-            paymentElement.destroy();
-          } else if (typeof paymentElement.unmount === 'function') {
-            paymentElement.unmount();
+          if (typeof checkoutInstance.destroy === 'function') {
+            checkoutInstance.destroy();
+          } else if (typeof checkoutInstance.unmount === 'function') {
+            checkoutInstance.unmount();
           }
         } catch (error) {
-          console.warn('Failed to clean up Stripe payment element', error);
+          console.warn('Failed to clean up checkout instance', error);
         }
       }
-      if (expressElement) {
-        try {
-          if (typeof expressElement.destroy === 'function') {
-            expressElement.destroy();
-          } else if (typeof expressElement.unmount === 'function') {
-            expressElement.unmount();
-          }
-        } catch (error) {
-          console.warn('Failed to clean up Stripe express checkout element', error);
-        }
+      if (checkoutRef.current === checkoutInstance) {
+        checkoutRef.current = null;
       }
-      elementsRef.current = null;
-      stripeRef.current = null;
-      setHasExpressCheckout(false);
-      setIsReady(false);
     };
-  }, [clientSecret, completedPaymentIntentId, organizerEmail]);
+  }, [canRenderCheckout, clientSecret, checkoutSessionId, paymentCompleted]);
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    if (!stripeRef.current || !elementsRef.current) {
-      handleStripeError('Payment form is not ready yet.', { isSetupError: true });
-      return;
-    }
-
-    setErrorMessage('');
-    setIsProcessing(true);
-
-    try {
-      const { error, paymentIntent } = await stripeRef.current.confirmPayment({
-        elements: elementsRef.current,
-        confirmParams: {
-          return_url: window.location.href,
-          receipt_email: organizerEmail || undefined,
-        },
-        redirect: 'if_required',
-      });
-
-      if (error) {
-        handleStripeError(error.message);
-        return;
-      }
-
-      if (paymentIntent?.status === 'succeeded') {
-        onSuccessRef.current?.(paymentIntent);
-        return;
-      }
-
-      handleStripeError('Payment was not completed.');
-    } catch (error) {
-      console.error('Payment confirmation failed', error);
-      const message =
-        error instanceof Error && (error.message.includes('JSON') || error.message.includes('504'))
-          ? 'Payment service is temporarily unavailable. Please try again in a moment.'
-          : error instanceof Error
-          ? error.message
-          : 'Payment could not be completed.';
-      handleStripeError(message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const paymentCompleted = Boolean(completedPaymentIntentId);
-  const canRenderPaymentForm = Boolean(clientSecret) && !paymentCompleted && !setupError;
+  const disableBackButton = status === 'processing';
+  const showCheckoutForm = canRenderCheckout;
+  const showFallback = !showCheckoutForm && !paymentCompleted;
+  const showCompletion = paymentCompleted;
 
   return (
     <main className="screen screen-payment">
       <div className="payment-screen__container">
         <section className="payment-screen__summary">
-          <h1>Matches locked in!</h1>
+          <h1>Express checkout for instant magic</h1>
           <p>
-            Your Secret Santa draw is ready to share. To deliver assignments to each
-            participant, complete the secure payment below. We’ll send notifications as
-            soon as the payment is confirmed.
+            A quick <strong>{displayAmount}</strong> payment keeps the holiday surprise alive. We’ll send every
+            assignment as soon as your payment is confirmed.
           </p>
           {eventName?.trim() && (
             <p className="payment-screen__event">Event: {eventName.trim()}</p>
           )}
+          <p>
+            Billing address is all we need for your receipt. No passwords, no extra forms — just a fast, secure
+            checkout powered by Stripe.
+          </p>
           {contactSummaries.length > 0 && (
             <div className="payment-screen__contact">
-              <h2>How we’ll notify participants</h2>
+              <h2>Planned notifications</h2>
               <ul>
                 {contactSummaries.map((summary, index) => (
                   <li key={participants?.[index]?.id || index}>{summary}</li>
@@ -375,94 +331,86 @@ export default function PaymentScreen({
             </div>
           )}
         </section>
+
         <section className="payment-screen__form" aria-live="polite">
-          <div className="payment-modal">
-            <header className="payment-modal__header">
-              <h2>Secure payment required</h2>
+          <div className="checkout-card">
+            <header className="checkout-card__header">
+              <h2>Secure checkout</h2>
               {organizerName?.trim() && (
-                <p className="payment-modal__greeting">
-                  Thank you, {organizerName.trim()}, for keeping the magic going!
-                </p>
+                <p className="checkout-card__greeting">Hi {organizerName.trim()}! Let’s wrap this up.</p>
               )}
-              <p>
-                To send participant notifications, please confirm a one-time payment of{' '}
-                <strong>{displayAmount}</strong>.
+              <p className="checkout-card__lead">
+                Confirm a one-time payment of <strong>{displayAmount}</strong> to deliver every Secret Santa assignment.
               </p>
-              <p className="payment-modal__description">{PAYMENT_DESCRIPTION}</p>
+              <p className="checkout-card__description">{PAYMENT_DESCRIPTION}</p>
             </header>
 
-            {canRenderPaymentForm && (
-              <form className="payment-modal__form" onSubmit={handleSubmit}>
+            {showCheckoutForm && (
+              <div className="checkout-card__body">
                 <div
-                  className={`payment-modal__express${
-                    hasExpressCheckout ? '' : ' payment-modal__express--inactive'
-                  }`}
-                  ref={expressCheckoutRef}
-                  aria-hidden={!hasExpressCheckout}
-                />
-                {hasExpressCheckout && (
-                  <div className="payment-modal__divider" aria-hidden="true">
-                    <span>or pay with card</span>
-                  </div>
-                )}
-                <div className="payment-modal__element" ref={paymentElementRef}>
-                  {!isReady && <p className="payment-modal__loading">Loading payment options…</p>}
+                  className={`checkout-embed checkout-embed--${status}`}
+                >
+                  <div className="checkout-embed__frame" ref={containerRef} />
+                  {status === 'loading' && (
+                    <p className="checkout-embed__status">Setting up secure checkout…</p>
+                  )}
+                  {status === 'processing' && (
+                    <p className="checkout-embed__status">Processing payment…</p>
+                  )}
                 </div>
                 {(errorMessage || notificationError) && (
-                  <p className="payment-modal__error" role="alert">
+                  <p className="checkout-card__error" role="alert">
                     {errorMessage || notificationError}
                   </p>
                 )}
-                <div className="payment-modal__actions">
+                <div className="checkout-card__actions">
                   <button
                     type="button"
                     className="secondary"
                     onClick={onCancel}
-                    disabled={isProcessing}
+                    disabled={disableBackButton}
                   >
                     Back
                   </button>
-                  <button
-                    type="submit"
-                    className="primary"
-                    disabled={isProcessing || !isReady}
-                  >
-                    {isProcessing ? 'Processing…' : 'Pay'}
-                  </button>
                 </div>
-              </form>
-            )}
-
-            {!canRenderPaymentForm && !paymentCompleted && (
-              <div className="payment-screen__fallback">
-                <p className="payment-screen__status" role="alert">
-                  {errorMessage ||
-                    notificationError ||
-                    'We were unable to load the payment form. Please go back and try again.'}
-                </p>
-                <button type="button" className="secondary" onClick={onCancel}>
-                  Back to draw
-                </button>
               </div>
             )}
 
-            {paymentCompleted && (
-              <div className="payment-screen__post-payment">
-                <p className="payment-screen__success" role="status">
+            {showFallback && (
+              <div className="checkout-card__body checkout-card__body--fallback">
+                <p className="checkout-card__error" role="alert">
+                  {errorMessage ||
+                    notificationError ||
+                    'We were unable to load checkout. Please go back and try again.'}
+                </p>
+                <div className="checkout-card__actions">
+                  <button type="button" className="secondary" onClick={onCancel}>
+                    Back to draw
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {showCompletion && (
+              <div className="checkout-card__body checkout-card__body--complete">
+                <p className="checkout-card__success" role="status">
                   Payment confirmed! We’re preparing your notifications now.
                 </p>
+                {paymentIntentId && (
+                  <p className="checkout-card__reference">Payment reference: {paymentIntentId}</p>
+                )}
                 {isSendingNotifications && (
-                  <p className="payment-screen__status">Sending notifications…</p>
+                  <p className="checkout-card__status">Sending notifications…</p>
                 )}
                 {notificationError && (
                   <>
-                    <p className="payment-screen__status payment-screen__status--error" role="alert">
+                    <p className="checkout-card__status checkout-card__status--error" role="alert">
                       {notificationError}
                     </p>
                     <button
                       type="button"
                       className="primary"
-                      onClick={() => onRetryNotifications?.(completedPaymentIntentId)}
+                      onClick={() => onRetryNotifications?.(completedCheckoutSessionId, paymentIntentId)}
                       disabled={isSendingNotifications}
                     >
                       {isSendingNotifications ? 'Retrying…' : 'Retry notification delivery'}
@@ -472,11 +420,14 @@ export default function PaymentScreen({
               </div>
             )}
 
-            <footer className="payment-modal__footer">
+            <footer className="checkout-card__footer">
               <p>
-                By completing payment, notifications will be sent to every participant and a
-                receipt will be emailed to you.
+                Stripe handles the payment securely. Once complete, we’ll email you a receipt thanking you for organizing
+                this draw with our services.
               </p>
+              {organizerEmail?.trim() && (
+                <p className="checkout-card__meta">Receipt will be sent to {organizerEmail.trim()}.</p>
+              )}
             </footer>
           </div>
         </section>

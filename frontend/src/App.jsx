@@ -5,7 +5,7 @@ import ConfirmationScreen from './components/ConfirmationScreen.jsx';
 import Header from './components/Header.jsx';
 import ProgressDots from './components/ProgressDots.jsx';
 import PaymentScreen from './components/PaymentScreen.jsx';
-import { createDraw, createNotificationPaymentIntent, sendNotifications } from './lib/api';
+import { createDraw, createNotificationCheckoutSession, sendNotifications } from './lib/api';
 
 const SCREENS = {
   setup: 0,
@@ -55,9 +55,11 @@ export default function App() {
   const [notificationBatchId, setNotificationBatchId] = useState(null);
   const [isSendingNotifications, setIsSendingNotifications] = useState(false);
   const [notificationError, setNotificationError] = useState('');
-  const [paymentIntentClientSecret, setPaymentIntentClientSecret] = useState('');
-  const [isCreatingPaymentIntent, setIsCreatingPaymentIntent] = useState(false);
-  const [completedPaymentIntentId, setCompletedPaymentIntentId] = useState('');
+  const [checkoutClientSecret, setCheckoutClientSecret] = useState('');
+  const [checkoutSessionId, setCheckoutSessionId] = useState('');
+  const [isCreatingCheckoutSession, setIsCreatingCheckoutSession] = useState(false);
+  const [completedCheckoutSessionId, setCompletedCheckoutSessionId] = useState('');
+  const [lastPaymentIntentId, setLastPaymentIntentId] = useState('');
 
   useEffect(() => {
     if (
@@ -78,9 +80,11 @@ export default function App() {
     setNotificationBatchId(null);
     setNotificationError('');
     setIsSendingNotifications(false);
-    setPaymentIntentClientSecret('');
-    setIsCreatingPaymentIntent(false);
-    setCompletedPaymentIntentId('');
+    setCheckoutClientSecret('');
+    setCheckoutSessionId('');
+    setIsCreatingCheckoutSession(false);
+    setCompletedCheckoutSessionId('');
+    setLastPaymentIntentId('');
     try {
       const result = await createDraw(payload);
       setAssignments(result.assignments);
@@ -109,15 +113,24 @@ export default function App() {
     setNotificationBatchId(null);
     setNotificationError('');
     setIsSendingNotifications(false);
-    setPaymentIntentClientSecret('');
-    setIsCreatingPaymentIntent(false);
-    setCompletedPaymentIntentId('');
+    setCheckoutClientSecret('');
+    setCheckoutSessionId('');
+    setIsCreatingCheckoutSession(false);
+    setCompletedCheckoutSessionId('');
+    setLastPaymentIntentId('');
   };
 
-  const triggerNotificationSend = async (paymentIntentId) => {
+  const triggerNotificationSend = async (sessionId, paymentIntentId) => {
     if (!notificationBatchId) {
       setNotificationError(
         'We could not locate the notification batch. Please restart the draw and try again.'
+      );
+      return;
+    }
+
+    if (!sessionId) {
+      setNotificationError(
+        'We could not locate a completed checkout session. Please try submitting payment again.'
       );
       return;
     }
@@ -126,17 +139,21 @@ export default function App() {
     setNotificationError('');
 
     try {
-      await sendNotifications(notificationBatchId, paymentIntentId);
+      const response = await sendNotifications(notificationBatchId, sessionId);
 
       setShowNotificationPrompt(false);
       setScreenIndex(SCREENS.confirmation);
       setNotificationBatchId(null);
-      setCompletedPaymentIntentId('');
+      setCompletedCheckoutSessionId('');
+      setLastPaymentIntentId(response?.paymentIntentId || paymentIntentId || '');
     } catch (error) {
       console.error(error);
       const message = error.message || 'Unable to send notifications. Please try again.';
       setNotificationError(message);
-      setCompletedPaymentIntentId(paymentIntentId);
+      setCompletedCheckoutSessionId(sessionId);
+      if (paymentIntentId) {
+        setLastPaymentIntentId(paymentIntentId);
+      }
     } finally {
       setIsSendingNotifications(false);
     }
@@ -151,16 +168,23 @@ export default function App() {
     }
 
     setNotificationError('');
-    setIsCreatingPaymentIntent(true);
+    setIsCreatingCheckoutSession(true);
 
     try {
-      const response = await createNotificationPaymentIntent({
+      const response = await createNotificationCheckoutSession({
         batchId: notificationBatchId,
         eventName: eventData.name,
-        organizer: eventData.organizer
+        organizer: eventData.organizer,
       });
 
-      setPaymentIntentClientSecret(response.clientSecret);
+      if (!response?.clientSecret || !response?.sessionId) {
+        throw new Error('Unable to start the checkout session.');
+      }
+
+      setCheckoutClientSecret(response.clientSecret);
+      setCheckoutSessionId(response.sessionId);
+      setCompletedCheckoutSessionId('');
+      setLastPaymentIntentId('');
       setShowNotificationPrompt(false);
       setScreenIndex(SCREENS.payment);
       return true;
@@ -170,7 +194,7 @@ export default function App() {
       setNotificationError(message);
       return false;
     } finally {
-      setIsCreatingPaymentIntent(false);
+      setIsCreatingCheckoutSession(false);
     }
   };
 
@@ -183,14 +207,18 @@ export default function App() {
     setNotificationBatchId(null);
     setNotificationError('');
     setIsSendingNotifications(false);
-    setPaymentIntentClientSecret('');
-    setIsCreatingPaymentIntent(false);
-    setCompletedPaymentIntentId('');
+    setCheckoutClientSecret('');
+    setCheckoutSessionId('');
+    setIsCreatingCheckoutSession(false);
+    setCompletedCheckoutSessionId('');
+    setLastPaymentIntentId('');
   };
 
   const handlePaymentCanceled = () => {
-    setPaymentIntentClientSecret('');
-    setCompletedPaymentIntentId('');
+    setCheckoutClientSecret('');
+    setCheckoutSessionId('');
+    setCompletedCheckoutSessionId('');
+    setLastPaymentIntentId('');
     setNotificationError('');
     setScreenIndex(SCREENS.draw);
     setShowNotificationPrompt(true);
@@ -202,27 +230,31 @@ export default function App() {
     }
   };
 
-  const handlePaymentSuccess = (paymentIntent) => {
-    if (!paymentIntent?.id) {
+  const handlePaymentSuccess = ({ sessionId, paymentIntentId } = {}) => {
+    if (!sessionId) {
       return;
     }
 
-    setCompletedPaymentIntentId(paymentIntent.id);
-    setPaymentIntentClientSecret('');
-    triggerNotificationSend(paymentIntent.id);
+    setCompletedCheckoutSessionId(sessionId);
+    setCheckoutClientSecret('');
+    setCheckoutSessionId('');
+    if (paymentIntentId) {
+      setLastPaymentIntentId(paymentIntentId);
+    }
+    triggerNotificationSend(sessionId, paymentIntentId);
   };
 
-  const handleRetryNotifications = (paymentIntentId) => {
-    const intentId = paymentIntentId || completedPaymentIntentId;
+  const handleRetryNotifications = (sessionId, paymentIntentId) => {
+    const resolvedSessionId = sessionId || completedCheckoutSessionId;
 
-    if (!intentId) {
+    if (!resolvedSessionId) {
       setNotificationError(
         'We could not locate a completed payment. Please try submitting payment again.'
       );
       return;
     }
 
-    triggerNotificationSend(intentId);
+    triggerNotificationSend(resolvedSessionId, paymentIntentId || lastPaymentIntentId);
   };
 
   const participantList =
@@ -243,20 +275,21 @@ export default function App() {
         />
       )}
       {screenIndex === SCREENS.draw && (
-        <DrawAnimationScreen
-          participants={participantList}
-          onComplete={() => setIsAnimationComplete(true)}
-          notificationPromptVisible={showNotificationPrompt}
-          onNotificationConfirm={handleNotificationConfirmed}
-          notificationsSending={isSendingNotifications}
-          paymentSetupInProgress={isCreatingPaymentIntent}
-          notificationError={notificationError}
-          onCancelDrawConfirmed={handleDrawCancellation}
-        />
-      )}
+      <DrawAnimationScreen
+        participants={participantList}
+        onComplete={() => setIsAnimationComplete(true)}
+        notificationPromptVisible={showNotificationPrompt}
+        onNotificationConfirm={handleNotificationConfirmed}
+        notificationsSending={isSendingNotifications}
+        paymentSetupInProgress={isCreatingCheckoutSession}
+        notificationError={notificationError}
+        onCancelDrawConfirmed={handleDrawCancellation}
+      />
+    )}
       {screenIndex === SCREENS.payment && (
         <PaymentScreen
-          clientSecret={paymentIntentClientSecret}
+          clientSecret={checkoutClientSecret}
+          checkoutSessionId={checkoutSessionId}
           organizerName={eventData.organizer?.name}
           organizerEmail={eventData.organizer?.email}
           eventName={eventData.name}
@@ -267,7 +300,8 @@ export default function App() {
           onRetryNotifications={handleRetryNotifications}
           isSendingNotifications={isSendingNotifications}
           notificationError={notificationError}
-          completedPaymentIntentId={completedPaymentIntentId}
+          completedCheckoutSessionId={completedCheckoutSessionId}
+          paymentIntentId={lastPaymentIntentId}
         />
       )}
       {screenIndex === SCREENS.confirmation && (

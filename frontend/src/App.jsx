@@ -320,6 +320,7 @@ export default function App() {
           secretSantaRules={eventData.secretSantaRules}
           participants={participantList}
           assignments={assignments}
+          paymentIntentId={lastPaymentIntentId}
           onRestart={handleRestart}
         />
       )}

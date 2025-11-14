@@ -18,7 +18,7 @@ export async function createDraw(drawData: any) {
   }
 }
 
-interface PaymentIntentPayload {
+interface CheckoutSessionPayload {
   batchId: string;
   eventName?: string;
   organizer?: {
@@ -27,7 +27,7 @@ interface PaymentIntentPayload {
   };
 }
 
-export async function createNotificationPaymentIntent(payload: PaymentIntentPayload) {
+export async function createNotificationCheckoutSession(payload: CheckoutSessionPayload) {
   try {
     return await apiFetch(`${API_URL}/payments/create-intent`, {
       method: 'POST',
@@ -47,12 +47,12 @@ export async function createNotificationPaymentIntent(payload: PaymentIntentPayl
   }
 }
 
-export async function sendNotifications(batchId: string, paymentIntentId: string) {
+export async function sendNotifications(batchId: string, checkoutSessionId: string) {
   try {
     return await apiFetch(`${API_URL}/notifications/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ batchId, paymentIntentId }),
+      body: JSON.stringify({ batchId, checkoutSessionId }),
     });
   } catch (error) {
     if (error instanceof ApiError) {

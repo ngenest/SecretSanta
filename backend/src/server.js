@@ -270,6 +270,8 @@ if (isStripeConfigured) {
   console.warn('⚠ Stripe not configured - payment processing unavailable');
 }
 
+const getFirstHeaderValue = (headerValue = '') => headerValue.split(',')[0]?.trim();
+
 const normalizeAckBaseUrl = (value) => {
   if (!value || typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -281,17 +283,27 @@ const normalizeAckBaseUrl = (value) => {
     : `${withoutTrailingSlash}/acknowledgement`;
 };
 
+const normalizeBaseUrl = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, '');
+};
+
 const CONFIGURED_ACK_BASE_URL = normalizeAckBaseUrl(
   process.env.ACK_BASE_URL || process.env.APP_BASE_URL
 );
 const DEFAULT_ACK_BASE_URL = normalizeAckBaseUrl('http://localhost:5173');
 
+const CONFIGURED_APP_BASE_URL =
+  normalizeBaseUrl(process.env.APP_BASE_URL) ||
+  (CONFIGURED_ACK_BASE_URL ? CONFIGURED_ACK_BASE_URL.replace(/\/?acknowledgement$/, '') : null);
+const DEFAULT_APP_BASE_URL = normalizeBaseUrl('http://localhost:5173');
+
 const resolveAckBaseUrl = (req) => {
   if (CONFIGURED_ACK_BASE_URL) {
     return CONFIGURED_ACK_BASE_URL;
   }
-
-  const getFirstHeaderValue = (headerValue = '') => headerValue.split(',')[0]?.trim();
 
   const forwardedHost = getFirstHeaderValue(req?.get?.('x-forwarded-host'));
   const forwardedProto = getFirstHeaderValue(req?.get?.('x-forwarded-proto'));
@@ -334,6 +346,54 @@ const resolveAckBaseUrl = (req) => {
   }
 
   return DEFAULT_ACK_BASE_URL;
+};
+
+const resolveAppBaseUrl = (req) => {
+  if (CONFIGURED_APP_BASE_URL) {
+    return CONFIGURED_APP_BASE_URL;
+  }
+
+  const forwardedHost = getFirstHeaderValue(req?.get?.('x-forwarded-host'));
+  const forwardedProto = getFirstHeaderValue(req?.get?.('x-forwarded-proto'));
+  if (forwardedHost) {
+    const protocol = forwardedProto || 'https';
+    const normalized = normalizeBaseUrl(`${protocol}://${forwardedHost}`);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const originHeader = req?.get?.('origin');
+  if (originHeader) {
+    const normalized = normalizeBaseUrl(originHeader);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const refererHeader = req?.get?.('referer');
+  if (refererHeader) {
+    try {
+      const refererUrl = new URL(refererHeader);
+      const normalized = normalizeBaseUrl(`${refererUrl.protocol}//${refererUrl.host}`);
+      if (normalized) {
+        return normalized;
+      }
+    } catch (error) {
+      // Ignore invalid referer headers
+    }
+  }
+
+  const hostHeader = getFirstHeaderValue(req?.get?.('host'));
+  if (hostHeader) {
+    const protocol = req?.protocol || 'http';
+    const normalized = normalizeBaseUrl(`${protocol}://${hostHeader}`);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return DEFAULT_APP_BASE_URL;
 };
 
 const ACK_KEY = createHash('sha256').update(ACK_SECRET).digest();
@@ -552,10 +612,11 @@ const stripeRequest = async (endpoint, { method = 'GET', body } = {}) => {
   }
 };
 
-const createNotificationPaymentIntentRecord = async ({
+const createNotificationCheckoutSession = async ({
   batchId,
   eventName,
-  organizer
+  organizer,
+  returnUrl
 }) => {
   const trimmedEventName = eventName?.trim() || '';
   const organizerName = organizer?.name?.trim() || '';
@@ -565,23 +626,38 @@ const createNotificationPaymentIntentRecord = async ({
     : 'Secret Santa notifications';
 
   const params = toStripeParams([
-    ['amount', NOTIFICATION_PAYMENT_AMOUNT_CENTS],
-    ['currency', NOTIFICATION_PAYMENT_CURRENCY],
-    ['description', description],
-    ['automatic_payment_methods[enabled]', 'true'],
+    ['mode', 'payment'],
+    ['ui_mode', 'embedded'],
+    ['submit_type', 'pay'],
+    ['return_url', returnUrl],
+    ['billing_address_collection', 'required'],
+    ['customer_email', organizerEmail],
+    ['line_items[0][quantity]', 1],
+    ['line_items[0][price_data][currency]', NOTIFICATION_PAYMENT_CURRENCY],
+    ['line_items[0][price_data][unit_amount]', NOTIFICATION_PAYMENT_AMOUNT_CENTS],
+    ['line_items[0][price_data][product_data][name]', description],
+    ['line_items[0][price_data][product_data][description]', 'One-time notification delivery'],
     ['metadata[notificationBatchId]', batchId],
     ['metadata[eventName]', trimmedEventName],
     ['metadata[organizerName]', organizerName],
     ['metadata[organizerEmail]', organizerEmail],
     ['metadata[purpose]', 'notification_payment'],
-    ['receipt_email', organizerEmail]
+    ['payment_intent_data[metadata[notificationBatchId]]', batchId],
+    ['payment_intent_data[metadata[eventName]]', trimmedEventName],
+    ['payment_intent_data[metadata[organizerName]]', organizerName],
+    ['payment_intent_data[metadata[organizerEmail]]', organizerEmail],
+    ['payment_intent_data[metadata[purpose]]', 'notification_payment'],
+    ['payment_intent_data[receipt_email]', organizerEmail]
   ]);
 
-  return stripeRequest('/payment_intents', {
+  return stripeRequest('/checkout/sessions', {
     method: 'POST',
     body: params
   });
 };
+
+const retrieveCheckoutSession = async (sessionId) =>
+  stripeRequest(`/checkout/sessions/${sessionId}`, { method: 'GET' });
 
 const retrievePaymentIntent = async (paymentIntentId) =>
   stripeRequest(`/payment_intents/${paymentIntentId}`, { method: 'GET' });
@@ -964,13 +1040,13 @@ const sendOrganizerPaymentReceipt = async ({
   const displayEventName = eventName?.trim() || 'your Secret Santa draw';
   const formattedAmount = formatCurrency(amountCents, currency || NOTIFICATION_PAYMENT_CURRENCY);
 
-  const text = `Hi ${organizerName},\n\nThank you for organizing ${displayEventName} with Secret Santa Draws.\n\nWe received your payment of ${formattedAmount}.\nPayment reference: ${paymentIntentId}\n\nParticipant notifications are now on their way.\n\nHappy gifting!\nThe Secret Santa Draws Team`;
+  const text = `Hi ${organizerName},\n\nThank you for organizing ${displayEventName} with Secret Santa Draws and for trusting our services.\n\nWe received your payment of ${formattedAmount}.\nPayment reference: ${paymentIntentId}\n\nParticipant notifications are now on their way.\n\nHappy gifting!\nThe Secret Santa Draws Team`;
 
   const html = `
     <div style="font-family: Arial, sans-serif; color:#1f2937;">
       <h2 style="color:#b71c1c; margin-top:0;">Payment received</h2>
       <p>Hi ${escapeHtml(organizerName)},</p>
-      <p>Thank you for organizing <strong>${escapeHtml(displayEventName)}</strong> with Secret Santa Draws.</p>
+      <p>Thank you for organizing <strong>${escapeHtml(displayEventName)}</strong> with Secret Santa Draws and for trusting our services.</p>
       <p style="margin:16px 0;">We received your payment of <strong>${escapeHtml(formattedAmount)}</strong>.</p>
       <p style="margin:12px 0;">Payment reference: <strong>${escapeHtml(paymentIntentId || 'N/A')}</strong></p>
       <p style="margin-top:16px;">We&apos;re now notifying every participant with their assignments. Keep the holiday spirit glowing!</p>
@@ -1152,7 +1228,7 @@ app.post('/api/draw', async (req, res) => {
 
 app.post('/api/payments/create-intent', async (req, res) => {
   if (!isStripeConfigured) {
-    console.warn('Payment intent creation attempted but Stripe not configured');
+    console.warn('Checkout session creation attempted but Stripe not configured');
     return res.status(503).json({ error: 'Payment processing is temporarily unavailable.' });
   }
 
@@ -1167,21 +1243,25 @@ app.post('/api/payments/create-intent', async (req, res) => {
   }
 
   try {
-    console.log('Creating payment intent for batch:', batchId);
-    const paymentIntent = await createNotificationPaymentIntentRecord({
+    const appBaseUrl = resolveAppBaseUrl(req);
+    const returnUrl = `${appBaseUrl}/?checkout_session_id={CHECKOUT_SESSION_ID}`;
+
+    console.log('Creating checkout session for batch:', batchId);
+    const session = await createNotificationCheckoutSession({
       batchId,
       eventName: req.body?.eventName,
-      organizer: req.body?.organizer || {}
+      organizer: req.body?.organizer || {},
+      returnUrl
     });
 
-    if (!paymentIntent?.client_secret) {
+    if (!session?.client_secret || !session?.id) {
       throw new Error('Stripe did not return a client secret.');
     }
 
-    console.log('Payment intent created:', paymentIntent.id);
-    res.json({ clientSecret: paymentIntent.client_secret });
+    console.log('Checkout session created:', session.id);
+    res.json({ clientSecret: session.client_secret, sessionId: session.id });
   } catch (error) {
-    console.error('Failed to create payment intent', error);
+    console.error('Failed to create checkout session', error);
     const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 502;
     res.status(status).json({ error: error.message || 'Unable to initialize payment.' });
   }
@@ -1193,9 +1273,9 @@ app.post('/api/notifications/send', async (req, res) => {
     return res.status(400).json({ error: 'Notification batch id is required.' });
   }
 
-  const paymentIntentId = req.body?.paymentIntentId;
-  if (!paymentIntentId) {
-    return res.status(400).json({ error: 'Payment intent id is required.' });
+  const checkoutSessionId = req.body?.checkoutSessionId;
+  if (!checkoutSessionId) {
+    return res.status(400).json({ error: 'Checkout session id is required.' });
   }
 
   const batch = pendingNotificationBatches.get(batchId);
@@ -1207,36 +1287,61 @@ app.post('/api/notifications/send', async (req, res) => {
     return res.status(503).json({ error: 'Payment processing is temporarily unavailable.' });
   }
 
-  let paymentIntent;
+  let session;
   try {
-    paymentIntent = await retrievePaymentIntent(paymentIntentId);
+    session = await retrieveCheckoutSession(checkoutSessionId);
   } catch (error) {
-    console.error('Failed to verify payment intent', error);
+    console.error('Failed to verify checkout session', error);
     const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 502;
     return res.status(status).json({ error: error.message || 'Unable to verify payment.' });
   }
 
-  if (!paymentIntent || paymentIntent.object !== 'payment_intent') {
+  if (!session || session.object !== 'checkout.session') {
     return res.status(404).json({ error: 'Payment not found.' });
   }
 
-  if (paymentIntent.status !== 'succeeded') {
+  if (session.metadata?.notificationBatchId !== batchId) {
+    return res.status(400).json({ error: 'Payment does not match this notification batch.' });
+  }
+
+  if (session.status !== 'complete' || session.payment_status !== 'paid') {
     return res.status(402).json({ error: 'Payment has not been completed yet.' });
   }
 
-  const paymentAmount = paymentIntent.amount_received ?? paymentIntent.amount ?? 0;
-  if (paymentAmount < NOTIFICATION_PAYMENT_AMOUNT_CENTS) {
+  const paymentIntentId =
+    typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : session.payment_intent?.id;
+
+  if (!paymentIntentId) {
+    return res.status(404).json({ error: 'Payment intent not found.' });
+  }
+
+  let paymentIntent;
+  try {
+    paymentIntent = await retrievePaymentIntent(paymentIntentId);
+  } catch (error) {
+    console.error('Failed to retrieve payment intent for receipt', error);
+  }
+
+  const paymentAmount = Number(
+    session.amount_total ??
+      paymentIntent?.amount_received ??
+      paymentIntent?.amount ??
+      0
+  );
+
+  if (!Number.isFinite(paymentAmount) || paymentAmount < NOTIFICATION_PAYMENT_AMOUNT_CENTS) {
     return res.status(400).json({ error: 'Payment amount is insufficient for notification delivery.' });
   }
 
-  const paymentCurrency = (paymentIntent.currency || '').toLowerCase() || NOTIFICATION_PAYMENT_CURRENCY;
+  const paymentCurrency =
+    (session.currency || paymentIntent?.currency || NOTIFICATION_PAYMENT_CURRENCY || '')
+      .toString()
+      .toLowerCase() || NOTIFICATION_PAYMENT_CURRENCY;
+
   if (paymentCurrency !== NOTIFICATION_PAYMENT_CURRENCY) {
     return res.status(400).json({ error: 'Unexpected payment currency.' });
-  }
-
-  const metadataBatchId = paymentIntent.metadata?.notificationBatchId;
-  if (metadataBatchId !== batchId) {
-    return res.status(400).json({ error: 'Payment does not match this notification batch.' });
   }
 
   try {
@@ -1254,10 +1359,14 @@ app.post('/api/notifications/send', async (req, res) => {
 
   try {
     await sendOrganizerPaymentReceipt({
-      email: paymentIntent.receipt_email || paymentIntent.metadata?.organizerEmail,
-      name: paymentIntent.metadata?.organizerName,
-      eventName: paymentIntent.metadata?.eventName,
-      paymentIntentId: paymentIntent.id,
+      email:
+        paymentIntent?.receipt_email ||
+        paymentIntent?.metadata?.organizerEmail ||
+        session.customer_details?.email ||
+        session.customer_email,
+      name: paymentIntent?.metadata?.organizerName || session.customer_details?.name,
+      eventName: paymentIntent?.metadata?.eventName || session.metadata?.eventName,
+      paymentIntentId,
       amountCents: paymentAmount,
       currency: paymentCurrency
     });
@@ -1265,7 +1374,7 @@ app.post('/api/notifications/send', async (req, res) => {
     console.error('Failed to send organizer payment receipt', error);
   }
 
-  res.json({ sentAt, paymentIntentId });
+  res.json({ sentAt, checkoutSessionId, paymentIntentId });
 });
 
 app.post('/api/acknowledgements', async (req, res) => {

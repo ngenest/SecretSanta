@@ -60,7 +60,6 @@ export default function App() {
   const [isCreatingCheckoutSession, setIsCreatingCheckoutSession] = useState(false);
   const [completedCheckoutSessionId, setCompletedCheckoutSessionId] = useState('');
   const [lastPaymentIntentId, setLastPaymentIntentId] = useState('');
-  const [shouldAutoSendNotifications, setShouldAutoSendNotifications] = useState(false);
 
   useEffect(() => {
     if (
@@ -86,7 +85,6 @@ export default function App() {
     setIsCreatingCheckoutSession(false);
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
-    setShouldAutoSendNotifications(false);
     try {
       const result = await createDraw(payload);
       setAssignments(result.assignments);
@@ -120,7 +118,6 @@ export default function App() {
     setIsCreatingCheckoutSession(false);
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
-    setShouldAutoSendNotifications(false);
   };
 
   const triggerNotificationSend = useCallback(
@@ -164,27 +161,6 @@ export default function App() {
     },
     [notificationBatchId]
   );
-
-  useEffect(() => {
-    if (
-      shouldAutoSendNotifications &&
-      notificationBatchId &&
-      completedCheckoutSessionId &&
-      !isSendingNotifications &&
-      screenIndex === SCREENS.payment
-    ) {
-      setShouldAutoSendNotifications(false);
-      triggerNotificationSend(completedCheckoutSessionId, lastPaymentIntentId);
-    }
-  }, [
-    shouldAutoSendNotifications,
-    notificationBatchId,
-    completedCheckoutSessionId,
-    isSendingNotifications,
-    screenIndex,
-    triggerNotificationSend,
-    lastPaymentIntentId
-  ]);
 
   const handleNotificationConfirmed = async () => {
     if (!notificationBatchId) {
@@ -239,7 +215,6 @@ export default function App() {
     setIsCreatingCheckoutSession(false);
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
-    setShouldAutoSendNotifications(false);
   };
 
   const resetToDrawAfterPayment = (errorMessage = '') => {
@@ -252,7 +227,6 @@ export default function App() {
     setScreenIndex(SCREENS.draw);
     setShowNotificationPrompt(isAnimationComplete && areAssignmentsReady);
     setNotificationError(errorMessage);
-    setShouldAutoSendNotifications(false);
   };
 
   const handlePaymentCanceled = () => {
@@ -267,7 +241,7 @@ export default function App() {
     resetToDrawAfterPayment(fallbackMessage);
   };
 
-  const handlePaymentSuccess = (payload = {}) => {
+  const handlePaymentSuccess = async (payload = {}) => {
     const normalizedPayload =
       payload && typeof payload === 'object'
         ? payload
@@ -295,11 +269,14 @@ export default function App() {
       return;
     }
 
+    const paymentIntentIdToUse = resolvedPaymentIntentId || '';
+
     setCompletedCheckoutSessionId(resolvedSessionId);
     setCheckoutClientSecret('');
     setCheckoutSessionId('');
-    setLastPaymentIntentId(resolvedPaymentIntentId || '');
-    setShouldAutoSendNotifications(true);
+    setLastPaymentIntentId(paymentIntentIdToUse);
+
+    await triggerNotificationSend(resolvedSessionId, paymentIntentIdToUse);
   };
 
   const handleRetryNotifications = (sessionId, paymentIntentId) => {

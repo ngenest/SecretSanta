@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import EventSetupScreen from './components/EventSetupScreen.jsx';
 import DrawAnimationScreen from './components/DrawAnimationScreen.jsx';
 import ConfirmationScreen from './components/ConfirmationScreen.jsx';
@@ -60,6 +60,7 @@ export default function App() {
   const [isCreatingCheckoutSession, setIsCreatingCheckoutSession] = useState(false);
   const [completedCheckoutSessionId, setCompletedCheckoutSessionId] = useState('');
   const [lastPaymentIntentId, setLastPaymentIntentId] = useState('');
+  const [shouldAutoSendNotifications, setShouldAutoSendNotifications] = useState(false);
 
   useEffect(() => {
     if (
@@ -85,6 +86,7 @@ export default function App() {
     setIsCreatingCheckoutSession(false);
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
+    setShouldAutoSendNotifications(false);
     try {
       const result = await createDraw(payload);
       setAssignments(result.assignments);
@@ -118,46 +120,71 @@ export default function App() {
     setIsCreatingCheckoutSession(false);
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
+    setShouldAutoSendNotifications(false);
   };
 
-  const triggerNotificationSend = async (sessionId, paymentIntentId) => {
-    if (!notificationBatchId) {
-      setNotificationError(
-        'We could not locate the notification batch. Please restart the draw and try again.'
-      );
-      return;
-    }
-
-    if (!sessionId) {
-      setNotificationError(
-        'We could not locate a completed checkout session. Please try submitting payment again.'
-      );
-      return;
-    }
-
-    setIsSendingNotifications(true);
-    setNotificationError('');
-
-    try {
-      const response = await sendNotifications(notificationBatchId, sessionId);
-
-      setShowNotificationPrompt(false);
-      setScreenIndex(SCREENS.confirmation);
-      setNotificationBatchId(null);
-      setCompletedCheckoutSessionId('');
-      setLastPaymentIntentId(response?.paymentIntentId || paymentIntentId || '');
-    } catch (error) {
-      console.error(error);
-      const message = error.message || 'Unable to send notifications. Please try again.';
-      setNotificationError(message);
-      setCompletedCheckoutSessionId(sessionId);
-      if (paymentIntentId) {
-        setLastPaymentIntentId(paymentIntentId);
+  const triggerNotificationSend = useCallback(
+    async (sessionId, paymentIntentId) => {
+      if (!notificationBatchId) {
+        setNotificationError(
+          'We could not locate the notification batch. Please restart the draw and try again.'
+        );
+        return;
       }
-    } finally {
-      setIsSendingNotifications(false);
+
+      if (!sessionId) {
+        setNotificationError(
+          'We could not locate a completed checkout session. Please try submitting payment again.'
+        );
+        return;
+      }
+
+      setIsSendingNotifications(true);
+      setNotificationError('');
+
+      try {
+        const response = await sendNotifications(notificationBatchId, sessionId);
+
+        setShowNotificationPrompt(false);
+        setScreenIndex(SCREENS.confirmation);
+        setNotificationBatchId(null);
+        setCompletedCheckoutSessionId('');
+        setLastPaymentIntentId(response?.paymentIntentId || paymentIntentId || '');
+      } catch (error) {
+        console.error(error);
+        const message = error.message || 'Unable to send notifications. Please try again.';
+        setNotificationError(message);
+        setCompletedCheckoutSessionId(sessionId);
+        if (paymentIntentId) {
+          setLastPaymentIntentId(paymentIntentId);
+        }
+      } finally {
+        setIsSendingNotifications(false);
+      }
+    },
+    [notificationBatchId]
+  );
+
+  useEffect(() => {
+    if (
+      shouldAutoSendNotifications &&
+      notificationBatchId &&
+      completedCheckoutSessionId &&
+      !isSendingNotifications &&
+      screenIndex === SCREENS.payment
+    ) {
+      setShouldAutoSendNotifications(false);
+      triggerNotificationSend(completedCheckoutSessionId, lastPaymentIntentId);
     }
-  };
+  }, [
+    shouldAutoSendNotifications,
+    notificationBatchId,
+    completedCheckoutSessionId,
+    isSendingNotifications,
+    screenIndex,
+    triggerNotificationSend,
+    lastPaymentIntentId
+  ]);
 
   const handleNotificationConfirmed = async () => {
     if (!notificationBatchId) {
@@ -212,6 +239,7 @@ export default function App() {
     setIsCreatingCheckoutSession(false);
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
+    setShouldAutoSendNotifications(false);
   };
 
   const resetToDrawAfterPayment = (errorMessage = '') => {
@@ -224,6 +252,7 @@ export default function App() {
     setScreenIndex(SCREENS.draw);
     setShowNotificationPrompt(isAnimationComplete && areAssignmentsReady);
     setNotificationError(errorMessage);
+    setShouldAutoSendNotifications(false);
   };
 
   const handlePaymentCanceled = () => {
@@ -269,10 +298,8 @@ export default function App() {
     setCompletedCheckoutSessionId(resolvedSessionId);
     setCheckoutClientSecret('');
     setCheckoutSessionId('');
-    if (resolvedPaymentIntentId) {
-      setLastPaymentIntentId(resolvedPaymentIntentId);
-    }
-    triggerNotificationSend(resolvedSessionId, resolvedPaymentIntentId);
+    setLastPaymentIntentId(resolvedPaymentIntentId || '');
+    setShouldAutoSendNotifications(true);
   };
 
   const handleRetryNotifications = (sessionId, paymentIntentId) => {

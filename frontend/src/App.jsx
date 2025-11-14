@@ -238,18 +238,41 @@ export default function App() {
     resetToDrawAfterPayment(fallbackMessage);
   };
 
-  const handlePaymentSuccess = ({ sessionId, paymentIntentId } = {}) => {
-    if (!sessionId) {
+  const handlePaymentSuccess = (payload = {}) => {
+    const normalizedPayload =
+      payload && typeof payload === 'object'
+        ? payload
+        : { sessionId: typeof payload === 'string' ? payload : '' };
+
+    const resolvedSessionId =
+      normalizedPayload.sessionId ||
+      normalizedPayload.checkoutSessionId ||
+      checkoutSessionId ||
+      completedCheckoutSessionId ||
+      '';
+
+    const resolvedPaymentIntentId =
+      normalizedPayload.paymentIntentId ||
+      normalizedPayload.payment_intent ||
+      normalizedPayload.id ||
+      normalizedPayload.paymentIntent?.id ||
+      normalizedPayload.payment_intent?.id ||
+      '';
+
+    if (!resolvedSessionId) {
+      setNotificationError(
+        'We were unable to confirm the payment session. Please try submitting payment again.'
+      );
       return;
     }
 
-    setCompletedCheckoutSessionId(sessionId);
+    setCompletedCheckoutSessionId(resolvedSessionId);
     setCheckoutClientSecret('');
     setCheckoutSessionId('');
-    if (paymentIntentId) {
-      setLastPaymentIntentId(paymentIntentId);
+    if (resolvedPaymentIntentId) {
+      setLastPaymentIntentId(resolvedPaymentIntentId);
     }
-    triggerNotificationSend(sessionId, paymentIntentId);
+    triggerNotificationSend(resolvedSessionId, resolvedPaymentIntentId);
   };
 
   const handleRetryNotifications = (sessionId, paymentIntentId) => {

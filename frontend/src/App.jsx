@@ -7,6 +7,7 @@ import ProgressDots from './components/ProgressDots.jsx';
 import PaymentScreen from './components/PaymentScreen.jsx';
 import Footer from './components/Footer.jsx';
 import TermsOverlay from './components/TermsOverlay.jsx';
+import BackgroundEffects from './components/BackgroundEffects.jsx';
 import { createDraw, createNotificationCheckoutSession, sendNotifications } from './lib/api';
 
 const SCREENS = {
@@ -466,6 +467,7 @@ export default function App() {
 
   return (
     <>
+      <BackgroundEffects />
       <div className={`app screen-${screenIndex}`}>
         <Header />
         <ProgressDots activeIndex={screenIndex} />

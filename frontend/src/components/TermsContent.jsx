@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import aiDoneRight from '../assets/ai-done-right.gif';
 
 function TermsCelebration() {
   return (
     <div className="terms-celebration" aria-label="AI Done Right badge">
-      <div className="terms-celebration__fallback">AI Done Right</div>
+      <img src={aiDoneRight} alt="AI Done Right badge" loading="lazy" />
     </div>
   );
 }

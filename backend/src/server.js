@@ -688,12 +688,19 @@ const registerAcknowledgements = ({ matches, event, ackBaseUrl }) => {
       exchangeType,
       otherGroupType,
       drawMode,
+      drawDate: drawDateValue,
       giverId: giver.id,
       giverName: giver.name,
       giverEmail: giver.email,
       giverPhone: giver.phone,
       receiverId: receiver.id,
       receiverName: receiver.name,
+      receiverEmail: receiver.email,
+      receiverPhone: receiver.phone,
+      secretSantaRules,
+      organizerName,
+      organizerEmail,
+      organizerPhone,
       issuedAt
     };
     const token = createAckToken(tokenPayload);
@@ -1386,32 +1393,58 @@ app.post('/api/acknowledgements', async (req, res) => {
   try {
     const payload = decodeAckToken(token);
     const ackBaseUrl = resolveAckBaseUrl(req);
-    const stored = acknowledgementsStore.get(token) || {
+    const acknowledgementUrl = `${ackBaseUrl}?payload=${encodeURIComponent(token)}`;
+    const storedRecord = acknowledgementsStore.get(token);
+
+    const merged = {
+      acknowledgementUrl,
+      secretSantaRules: '',
+      organizerName: '',
+      organizerEmail: '',
+      organizerPhone: '',
+      drawMode: payload.drawMode || storedRecord?.drawMode || 'couples',
+      drawDate: payload.drawDate || storedRecord?.drawDate || '',
+      receiverEmail: payload.receiverEmail || storedRecord?.receiverEmail || '',
+      receiverPhone: payload.receiverPhone || storedRecord?.receiverPhone || '',
       ...payload,
-      acknowledgementUrl: `${ackBaseUrl}?payload=${encodeURIComponent(token)}`,
-      eventTypeLabel: getExchangeLabel(payload.exchangeType, payload.otherGroupType)
+      ...storedRecord
     };
-    if (!stored.acknowledged) {
-      stored.acknowledged = true;
-      stored.acknowledgedAt = new Date().toISOString();
-      acknowledgementsStore.set(token, stored);
+
+    merged.eventTypeLabel =
+      merged.eventTypeLabel || getExchangeLabel(merged.exchangeType, merged.otherGroupType);
+    merged.organizerName = merged.organizerName || '';
+    merged.organizerEmail = merged.organizerEmail || '';
+    merged.organizerPhone = merged.organizerPhone || '';
+    merged.secretSantaRules = merged.secretSantaRules || '';
+    merged.drawMode = merged.drawMode || 'couples';
+    merged.drawDate = merged.drawDate || '';
+    merged.receiverEmail = merged.receiverEmail || '';
+    merged.receiverPhone = merged.receiverPhone || '';
+    merged.issuedAt = merged.issuedAt || payload.issuedAt || '';
+    merged.acknowledgementUrl = acknowledgementUrl;
+
+    if (!merged.acknowledged) {
+      merged.acknowledged = true;
+      merged.acknowledgedAt = new Date().toISOString();
     }
+
+    acknowledgementsStore.set(token, merged);
 
     try {
       await notifyOrganizerOfAcknowledgement({
         organizer: {
-          name: stored.organizerName,
-          email: stored.organizerEmail,
-          phone: stored.organizerPhone
+          name: merged.organizerName,
+          email: merged.organizerEmail,
+          phone: merged.organizerPhone
         },
-        eventName: stored.eventName,
-        eventDate: stored.eventDate,
-        eventTypeLabel: stored.eventTypeLabel || getExchangeLabel(stored.exchangeType, stored.otherGroupType),
-        drawDate: stored.drawDate,
+        eventName: merged.eventName,
+        eventDate: merged.eventDate,
+        eventTypeLabel: merged.eventTypeLabel,
+        drawDate: merged.drawDate,
         participant: {
-          name: stored.giverName,
-          email: stored.giverEmail,
-          phone: stored.giverPhone
+          name: merged.giverName,
+          email: merged.giverEmail,
+          phone: merged.giverPhone
         }
       });
     } catch (notifyError) {
@@ -1419,19 +1452,30 @@ app.post('/api/acknowledgements', async (req, res) => {
     }
 
     res.json({
-      eventName: stored.eventName,
-      eventDate: stored.eventDate,
-      exchangeType: stored.exchangeType,
-      otherGroupType: stored.otherGroupType,
-      eventTypeLabel: stored.eventTypeLabel,
-      drawMode: stored.drawMode,
-      drawDate: stored.drawDate,
-      giverId: stored.giverId,
-      giverName: stored.giverName,
-      receiverId: stored.receiverId,
-      receiverName: stored.receiverName,
-      acknowledgedAt: stored.acknowledgedAt,
-      secretSantaRules: stored.secretSantaRules || ''
+      eventName: merged.eventName,
+      eventDate: merged.eventDate,
+      exchangeType: merged.exchangeType,
+      otherGroupType: merged.otherGroupType,
+      eventTypeLabel: merged.eventTypeLabel,
+      drawMode: merged.drawMode,
+      drawDate: merged.drawDate,
+      acknowledgementUrl: merged.acknowledgementUrl,
+      acknowledgedAt: merged.acknowledgedAt,
+      issuedAt: merged.issuedAt,
+      giverId: merged.giverId,
+      giverName: merged.giverName,
+      giverEmail: merged.giverEmail || '',
+      giverPhone: merged.giverPhone || '',
+      receiverId: merged.receiverId,
+      receiverName: merged.receiverName,
+      receiverEmail: merged.receiverEmail || '',
+      receiverPhone: merged.receiverPhone || '',
+      secretSantaRules: merged.secretSantaRules || '',
+      organizer: {
+        name: merged.organizerName || '',
+        email: merged.organizerEmail || '',
+        phone: merged.organizerPhone || ''
+      }
     });
   } catch (error) {
     console.error('Failed to verify acknowledgement token', error);

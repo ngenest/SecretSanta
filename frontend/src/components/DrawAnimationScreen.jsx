@@ -13,9 +13,9 @@ const animationSequence = async (controls) => {
   await controls.start({
     scale: [1, 1.1, 1],
     boxShadow: [
-      '0 0 0px rgba(255,215,0,0.8)',
-      '0 0 30px rgba(255,215,0,0.9)',
-      '0 0 5px rgba(255,215,0,0.6)'
+      '0 0 0px rgba(255,209,102,0.75)',
+      '0 0 30px rgba(45,140,255,0.65)',
+      '0 0 8px rgba(31,200,139,0.6)'
     ],
     transition: { duration: 2 }
   });
@@ -108,7 +108,7 @@ export default function DrawAnimationScreen({
     <main className="screen screen-draw">
       <motion.h1
         className="screen-title"
-        animate={{ color: ['#FFD700', '#FF0000', '#008000'] }}
+        animate={{ color: ['#ef476f', '#2d8cff', '#1fc88b'] }}
         transition={{ repeat: Infinity, duration: 2 }}
       >
         Shuffling the Secrets!

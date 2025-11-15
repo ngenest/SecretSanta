@@ -19,19 +19,37 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const EMAIL_LOGO_DATA_URI = (() => {
-  try {
-    const gifPath = path.resolve(__dirname, './assets/secret-santa-logo-animated.gif');
-    const buffer = fs.readFileSync(gifPath);
-    return `data:image/gif;base64,${buffer.toString('base64')}`;
-  } catch (error) {
-    console.warn('Unable to load animated email logo', error);
-    return '';
+  const candidateAssets = [
+    {
+      relativePath: '../../frontend/src/assets/secret_santa_app_gift_logo.png',
+      mimeType: 'image/png'
+    },
+    {
+      relativePath: './assets/secret-santa-logo-animated.gif',
+      mimeType: 'image/gif'
+    }
+  ];
+
+  for (const asset of candidateAssets) {
+    const resolvedPath = path.resolve(__dirname, asset.relativePath);
+    try {
+      const buffer = fs.readFileSync(resolvedPath);
+      return `data:${asset.mimeType};base64,${buffer.toString('base64')}`;
+    } catch (error) {
+      // Continue to the next candidate while keeping a helpful breadcrumb in development.
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`Unable to load email logo asset at ${resolvedPath}`, error);
+      }
+    }
   }
+
+  console.warn('Unable to load any email logo asset; emails will render without a logo.');
+  return '';
 })();
 
 const EMAIL_LOGO_BLOCK = EMAIL_LOGO_DATA_URI
   ? `<div style="text-align:center;margin:0 0 20px;">
-        <img src="${EMAIL_LOGO_DATA_URI}" alt="Secret Santa animated logo" style="width:160px;height:auto;border-radius:20px;box-shadow:0 18px 36px rgba(18, 16, 48, 0.28);" />
+        <img src="${EMAIL_LOGO_DATA_URI}" alt="Secret Santa gift logo" style="width:160px;height:auto;border-radius:20px;box-shadow:0 18px 36px rgba(18, 16, 48, 0.28);" />
      </div>`
   : '';
 

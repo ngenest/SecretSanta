@@ -572,8 +572,8 @@ export default function EventSetupScreen({ onSubmit, initialEvent }) {
     >
       <motion.h1
         className="screen-title"
-        initial={{ textShadow: '0 0 0px #FFD700' }}
-        animate={{ textShadow: ['0 0 0px #FFD700', '0 0 15px #FFD700'] }}
+        initial={{ textShadow: '0 0 0px #FFD166' }}
+        animate={{ textShadow: ['0 0 0px #FFD166', '0 0 15px #FFD166'] }}
         transition={{ repeat: Infinity, duration: 2 }}
       >
         Create Your Secret Santa Magic!

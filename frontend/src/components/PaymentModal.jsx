@@ -74,18 +74,19 @@ export default function PaymentModal({
         stripeRef.current = stripe;
         const elements = stripe.elements({
           clientSecret,
-          appearance: {
-            theme: 'flat',
-            variables: {
-              colorPrimary: '#B71C1C',
-              colorText: '#1F2937',
-              borderRadius: '12px',
-              fontFamily: '"Nunito", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-            },
-            rules: {
-              '.Label': {
-                fontWeight: '600',
+            appearance: {
+              theme: 'flat',
+              variables: {
+                colorPrimary: '#2d8cff',
+                colorText: '#0b1026',
+                colorDanger: '#ef476f',
+                borderRadius: '12px',
+                fontFamily: '"Nunito", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
               },
+              rules: {
+                '.Label': {
+                  fontWeight: '600',
+                },
               '.Input': {
                 padding: '14px 12px',
               },

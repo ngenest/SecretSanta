@@ -5,6 +5,8 @@ import ConfirmationScreen from './components/ConfirmationScreen.jsx';
 import Header from './components/Header.jsx';
 import ProgressDots from './components/ProgressDots.jsx';
 import PaymentScreen from './components/PaymentScreen.jsx';
+import Footer from './components/Footer.jsx';
+import TermsOverlay from './components/TermsOverlay.jsx';
 import { createDraw, createNotificationCheckoutSession, sendNotifications } from './lib/api';
 
 const SCREENS = {
@@ -125,6 +127,7 @@ export default function App() {
   const [completedCheckoutSessionId, setCompletedCheckoutSessionId] = useState('');
   const [lastPaymentIntentId, setLastPaymentIntentId] = useState('');
   const [pendingSessionToResume, setPendingSessionToResume] = useState('');
+  const [isTermsOverlayOpen, setIsTermsOverlayOpen] = useState(false);
   const paymentCompletionRef = useRef(false);
 
   useEffect(() => {
@@ -446,6 +449,14 @@ export default function App() {
     triggerNotificationSend(resolvedSessionId, paymentIntentId || lastPaymentIntentId);
   };
 
+  const handleOpenTerms = useCallback(() => {
+    setIsTermsOverlayOpen(true);
+  }, []);
+
+  const handleCloseTerms = useCallback(() => {
+    setIsTermsOverlayOpen(false);
+  }, []);
+
   const participantList =
     eventData.drawMode === 'individuals'
       ? Array.isArray(eventData.individuals)
@@ -454,57 +465,61 @@ export default function App() {
       : (eventData.couples || []).flatMap((couple) => couple.participants || []);
 
   return (
-    <div className={`app screen-${screenIndex}`}>
-      <Header />
-      <ProgressDots activeIndex={screenIndex} />
-      {screenIndex === SCREENS.setup && (
-        <EventSetupScreen
-          onSubmit={handleEventSubmit}
-          initialEvent={eventData}
-        />
-      )}
-      {screenIndex === SCREENS.draw && (
-      <DrawAnimationScreen
-        participants={participantList}
-        onComplete={() => setIsAnimationComplete(true)}
-        notificationPromptVisible={showNotificationPrompt}
-        onNotificationConfirm={handleNotificationConfirmed}
-        notificationsSending={isSendingNotifications}
-        paymentSetupInProgress={isCreatingCheckoutSession}
-        notificationError={notificationError}
-        onCancelDrawConfirmed={handleDrawCancellation}
-      />
-    )}
-      {screenIndex === SCREENS.payment && (
-        <PaymentScreen
-          clientSecret={checkoutClientSecret}
-          checkoutSessionId={checkoutSessionId}
-          organizerName={eventData.organizer?.name}
-          organizerEmail={eventData.organizer?.email}
-          eventName={eventData.name}
-          participants={participantList}
-          onCancel={handlePaymentCanceled}
-          onSuccess={handlePaymentSuccess}
-          onError={handlePaymentError}
-          onRetryNotifications={handleRetryNotifications}
-          isSendingNotifications={isSendingNotifications}
-          notificationError={notificationError}
-          completedCheckoutSessionId={completedCheckoutSessionId}
-          paymentIntentId={lastPaymentIntentId}
-        />
-      )}
-      {screenIndex === SCREENS.confirmation && (
-        <ConfirmationScreen
-          eventName={eventData.name}
-          eventDate={eventData.date}
-          drawMode={eventData.drawMode}
-          secretSantaRules={eventData.secretSantaRules}
-          participants={participantList}
-          assignments={assignments}
-          paymentIntentId={lastPaymentIntentId}
-          onRestart={handleRestart}
-        />
-      )}
-    </div>
+    <>
+      <div className={`app screen-${screenIndex}`}>
+        <Header />
+        <ProgressDots activeIndex={screenIndex} />
+        {screenIndex === SCREENS.setup && (
+          <EventSetupScreen
+            onSubmit={handleEventSubmit}
+            initialEvent={eventData}
+          />
+        )}
+        {screenIndex === SCREENS.draw && (
+          <DrawAnimationScreen
+            participants={participantList}
+            onComplete={() => setIsAnimationComplete(true)}
+            notificationPromptVisible={showNotificationPrompt}
+            onNotificationConfirm={handleNotificationConfirmed}
+            notificationsSending={isSendingNotifications}
+            paymentSetupInProgress={isCreatingCheckoutSession}
+            notificationError={notificationError}
+            onCancelDrawConfirmed={handleDrawCancellation}
+          />
+        )}
+        {screenIndex === SCREENS.payment && (
+          <PaymentScreen
+            clientSecret={checkoutClientSecret}
+            checkoutSessionId={checkoutSessionId}
+            organizerName={eventData.organizer?.name}
+            organizerEmail={eventData.organizer?.email}
+            eventName={eventData.name}
+            participants={participantList}
+            onCancel={handlePaymentCanceled}
+            onSuccess={handlePaymentSuccess}
+            onError={handlePaymentError}
+            onRetryNotifications={handleRetryNotifications}
+            isSendingNotifications={isSendingNotifications}
+            notificationError={notificationError}
+            completedCheckoutSessionId={completedCheckoutSessionId}
+            paymentIntentId={lastPaymentIntentId}
+          />
+        )}
+        {screenIndex === SCREENS.confirmation && (
+          <ConfirmationScreen
+            eventName={eventData.name}
+            eventDate={eventData.date}
+            drawMode={eventData.drawMode}
+            secretSantaRules={eventData.secretSantaRules}
+            participants={participantList}
+            assignments={assignments}
+            paymentIntentId={lastPaymentIntentId}
+            onRestart={handleRestart}
+          />
+        )}
+        <Footer onTermsClick={handleOpenTerms} />
+      </div>
+      <TermsOverlay isOpen={isTermsOverlayOpen} onClose={handleCloseTerms} />
+    </>
   );
 }

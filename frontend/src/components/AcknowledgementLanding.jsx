@@ -22,6 +22,42 @@ const formatDate = (value) => {
   }
 };
 
+const formatDateTime = (value) => {
+  if (!value) return '';
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    }).format(new Date(value));
+  } catch (error) {
+    return value;
+  }
+};
+
+const safeText = (value, fallback = '') => {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || fallback;
+  }
+  try {
+    const text = String(value);
+    return text.trim() || fallback;
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const DRAW_MODE_LABELS = {
+  couples: 'Couples draw',
+  individuals: 'Individual draw'
+};
+
 const resolveEventTypeLabel = (exchangeType, otherGroupType) => {
   if (exchangeType === 'other') {
     return otherGroupType?.trim() || 'Other group';
@@ -96,6 +132,10 @@ export default function AcknowledgementLanding() {
     }, 250);
   };
 
+  const handleStartNewDraw = () => {
+    window.location.href = '/';
+  };
+
   if (status === 'loading') {
     return (
       <div className="ack-landing loading-state">
@@ -135,8 +175,27 @@ export default function AcknowledgementLanding() {
     return null;
   }
 
-  const eventTypeLabel = ackData.eventTypeLabel || resolveEventTypeLabel(ackData.exchangeType, ackData.otherGroupType);
-  const formattedDate = formatDate(ackData.eventDate);
+  const eventTypeLabel =
+    ackData.eventTypeLabel || resolveEventTypeLabel(ackData.exchangeType, ackData.otherGroupType);
+  const formattedEventDate = formatDate(ackData.eventDate);
+  const formattedDrawDate = formatDateTime(ackData.drawDate);
+  const confirmationTimestamp = formatDateTime(ackData.acknowledgedAt);
+  const drawModeLabel = DRAW_MODE_LABELS[ackData.drawMode] || 'Secret Santa draw';
+  const giverName = safeText(ackData.giverName, 'Secret Santa');
+  const receiverName = safeText(ackData.receiverName, 'your match');
+  const eventName = safeText(ackData.eventName, 'your Secret Santa event');
+  const organizer = ackData.organizer || {};
+  const organizerInfo = {
+    name: safeText(organizer.name),
+    email: safeText(organizer.email),
+    phone: safeText(organizer.phone)
+  };
+  const hasOrganizerContact = Boolean(organizerInfo.name || organizerInfo.email || organizerInfo.phone);
+  const receiverEmail = safeText(ackData.receiverEmail);
+  const receiverPhone = safeText(ackData.receiverPhone);
+  const receiverPhoneDial = receiverPhone ? receiverPhone.replace(/[^+\d]/g, '') : '';
+  const receiverContactProvided = Boolean(receiverEmail || receiverPhone);
+  const acknowledgementLink = safeText(ackData.acknowledgementUrl);
   const rulesLines = useMemo(
     () =>
       (ackData.secretSantaRules || '')
@@ -165,23 +224,59 @@ export default function AcknowledgementLanding() {
         </div>
       </div>
       <main className="ack-content">
-        <h1 className="ack-greeting">Thank you, {ackData.giverName || 'Secret Santa'}! 🎄</h1>
+        <h1 className="ack-greeting">Thank you, {giverName}! 🎄</h1>
         <p className="ack-intro">
           At the present time, nobody else but you knows who you were matched with.
           Keep the magic alive, keep it a secret!
         </p>
         <p className="ack-callout">Your draw has been confirmed.</p>
-        <p className="ack-neon">{ackData.receiverName} is going to be so happy with your gift!</p>
-        <section className="ack-details">
+        <p className="ack-neon">{receiverName} is going to be so happy with your gift!</p>
+        <section className="ack-summary">
+          <div className="ack-summary-item">
+            <span className="ack-summary-label">Event</span>
+            <span className="ack-summary-value">{eventName}</span>
+          </div>
+          <div className="ack-summary-item">
+            <span className="ack-summary-label">Celebration date</span>
+            <span className="ack-summary-value">{formattedEventDate || 'Date to be announced'}</span>
+          </div>
+          <div className="ack-summary-item">
+            <span className="ack-summary-label">Event type</span>
+            <span className="ack-summary-value">{eventTypeLabel}</span>
+          </div>
+          <div className="ack-summary-item">
+            <span className="ack-summary-label">Draw mode</span>
+            <span className="ack-summary-value">{drawModeLabel}</span>
+          </div>
+          {formattedDrawDate ? (
+            <div className="ack-summary-item">
+              <span className="ack-summary-label">Drawn on</span>
+              <span className="ack-summary-value">{formattedDrawDate}</span>
+            </div>
+          ) : null}
+        </section>
+        <section className="ack-assignment">
+          <h2>Your assignment</h2>
           <p>
-            <strong>Event:</strong> {ackData.eventName}
+            You will be gifting <strong>{receiverName}</strong> this year. Keep an eye on their wish list and
+            spread the cheer!
           </p>
-          <p>
-            <strong>Date:</strong> {formattedDate}
-          </p>
-          <p>
-            <strong>Event type:</strong> {eventTypeLabel}
-          </p>
+          {receiverContactProvided ? (
+            <div className="ack-assignment-details">
+              {receiverEmail ? (
+                <p>
+                  <span>Email:</span>{' '}
+                  <a href={`mailto:${receiverEmail}`}>{receiverEmail}</a>
+                </p>
+              ) : null}
+              {receiverPhone ? (
+                <p>
+                  <span>Phone:</span>{' '}
+                  <a href={`tel:${receiverPhoneDial}`}>{receiverPhone}</a>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </section>
         {rulesLines.length > 0 && (
           <section className="ack-rules">
@@ -193,12 +288,78 @@ export default function AcknowledgementLanding() {
             </ul>
           </section>
         )}
+        <section className="ack-meta-grid">
+          <article className="ack-meta-card">
+            <h3>Draw details</h3>
+            <ul className="ack-meta-list">
+              <li>
+                <span className="ack-meta-label">Mode</span>
+                <span className="ack-meta-value">{drawModeLabel}</span>
+              </li>
+              {formattedDrawDate ? (
+                <li>
+                  <span className="ack-meta-label">Draw date</span>
+                  <span className="ack-meta-value">{formattedDrawDate}</span>
+                </li>
+              ) : null}
+              {confirmationTimestamp ? (
+                <li>
+                  <span className="ack-meta-label">Confirmation recorded</span>
+                  <span className="ack-meta-value">{confirmationTimestamp}</span>
+                </li>
+              ) : null}
+              {acknowledgementLink ? (
+                <li className="ack-meta-link">
+                  <span className="ack-meta-label">Your link</span>
+                  <a href={acknowledgementLink}>{acknowledgementLink}</a>
+                </li>
+              ) : null}
+            </ul>
+          </article>
+          <article className="ack-meta-card">
+            <h3>Organizer contact</h3>
+            {hasOrganizerContact ? (
+              <ul className="ack-meta-list">
+                {organizerInfo.name ? (
+                  <li>
+                    <span className="ack-meta-label">Name</span>
+                    <span className="ack-meta-value">{organizerInfo.name}</span>
+                  </li>
+                ) : null}
+                {organizerInfo.email ? (
+                  <li>
+                    <span className="ack-meta-label">Email</span>
+                    <a className="ack-meta-value" href={`mailto:${organizerInfo.email}`}>
+                      {organizerInfo.email}
+                    </a>
+                  </li>
+                ) : null}
+                {organizerInfo.phone ? (
+                  <li>
+                    <span className="ack-meta-label">Phone</span>
+                    <a className="ack-meta-value" href={`tel:${organizerInfo.phone.replace(/[^+\d]/g, '')}`}>
+                      {organizerInfo.phone}
+                    </a>
+                  </li>
+                ) : null}
+              </ul>
+            ) : (
+              <p className="ack-meta-empty">Your organizer hasn&apos;t shared their contact details yet.</p>
+            )}
+          </article>
+        </section>
         <p className="ack-footer">
-          Now go get this unforgettable present and contact your organizer if there is any problem with the draw.
+          Need to tweak something? Reach out to your organizer if anything feels off. Ready to spread more joy?
+          You can run your own Secret Santa below.
         </p>
-        <button type="button" className="ack-close-button" onClick={handleClose}>
-          Close this magical tab
-        </button>
+        <div className="ack-actions">
+          <button type="button" className="ack-secondary-button" onClick={handleStartNewDraw}>
+            Organize your own Secret Santa
+          </button>
+          <button type="button" className="ack-close-button" onClick={handleClose}>
+            Close this magical tab
+          </button>
+        </div>
       </main>
     </div>
   );

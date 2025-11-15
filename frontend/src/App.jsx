@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import EventSetupScreen from './components/EventSetupScreen.jsx';
 import DrawAnimationScreen from './components/DrawAnimationScreen.jsx';
 import ConfirmationScreen from './components/ConfirmationScreen.jsx';
@@ -125,6 +125,7 @@ export default function App() {
   const [completedCheckoutSessionId, setCompletedCheckoutSessionId] = useState('');
   const [lastPaymentIntentId, setLastPaymentIntentId] = useState('');
   const [pendingSessionToResume, setPendingSessionToResume] = useState('');
+  const paymentCompletionRef = useRef(false);
 
   useEffect(() => {
     if (
@@ -187,6 +188,7 @@ export default function App() {
     setNotificationError('');
     setCompletedCheckoutSessionId(sessionIdFromUrl);
     setLastPaymentIntentId('');
+    paymentCompletionRef.current = true;
     setPendingSessionToResume(sessionIdFromUrl);
     removeCheckoutParam();
   }, []);
@@ -206,6 +208,7 @@ export default function App() {
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
     clearPersistedPaymentState();
+    paymentCompletionRef.current = false;
     try {
       const result = await createDraw(payload);
       setAssignments(result.assignments);
@@ -240,6 +243,7 @@ export default function App() {
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
     clearPersistedPaymentState();
+    paymentCompletionRef.current = false;
   };
 
   const triggerNotificationSend = useCallback(
@@ -354,9 +358,17 @@ export default function App() {
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
     clearPersistedPaymentState();
+    paymentCompletionRef.current = false;
   };
 
   const resetToDrawAfterPayment = (errorMessage = '') => {
+    if (paymentCompletionRef.current) {
+      if (errorMessage) {
+        setNotificationError(errorMessage);
+      }
+      return;
+    }
+
     setCheckoutClientSecret('');
     setCheckoutSessionId('');
     setCompletedCheckoutSessionId('');
@@ -367,6 +379,7 @@ export default function App() {
     setShowNotificationPrompt(isAnimationComplete && areAssignmentsReady);
     setNotificationError(errorMessage);
     clearPersistedPaymentState();
+    paymentCompletionRef.current = false;
   };
 
   const handlePaymentCanceled = () => {
@@ -411,6 +424,7 @@ export default function App() {
 
     const paymentIntentIdToUse = resolvedPaymentIntentId || '';
 
+    paymentCompletionRef.current = true;
     setCompletedCheckoutSessionId(resolvedSessionId);
     setCheckoutClientSecret('');
     setCheckoutSessionId('');

@@ -14,6 +14,70 @@ const SCREENS = {
   confirmation: 3
 };
 
+const PAYMENT_STATE_STORAGE_KEY = 'secret-santa-notification-checkout';
+const PAYMENT_STATE_TTL_MS = 1000 * 60 * 60; // 1 hour
+
+const persistPaymentState = (payload) => {
+  if (typeof window === 'undefined' || !window.sessionStorage) {
+    return;
+  }
+
+  try {
+    const stateToPersist = {
+      ...payload,
+      storedAt: Date.now()
+    };
+    window.sessionStorage.setItem(
+      PAYMENT_STATE_STORAGE_KEY,
+      JSON.stringify(stateToPersist)
+    );
+  } catch (error) {
+    console.warn('Unable to persist payment state', error);
+  }
+};
+
+const readPersistedPaymentState = () => {
+  if (typeof window === 'undefined' || !window.sessionStorage) {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(PAYMENT_STATE_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!parsed?.sessionId || !parsed?.notificationBatchId) {
+      return null;
+    }
+
+    const storedAt = Number(parsed?.storedAt);
+    if (storedAt && Date.now() - storedAt > PAYMENT_STATE_TTL_MS) {
+      window.sessionStorage.removeItem(PAYMENT_STATE_STORAGE_KEY);
+      return null;
+    }
+
+    return parsed;
+  } catch (error) {
+    console.warn('Unable to read stored payment state', error);
+    return null;
+  }
+};
+
+const clearPersistedPaymentState = () => {
+  if (typeof window === 'undefined' || !window.sessionStorage) {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(PAYMENT_STATE_STORAGE_KEY);
+  } catch (error) {
+    console.warn('Unable to clear stored payment state', error);
+  }
+};
+
 const generateId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
@@ -60,6 +124,7 @@ export default function App() {
   const [isCreatingCheckoutSession, setIsCreatingCheckoutSession] = useState(false);
   const [completedCheckoutSessionId, setCompletedCheckoutSessionId] = useState('');
   const [lastPaymentIntentId, setLastPaymentIntentId] = useState('');
+  const [pendingSessionToResume, setPendingSessionToResume] = useState('');
 
   useEffect(() => {
     if (
@@ -70,6 +135,61 @@ export default function App() {
       setShowNotificationPrompt(true);
     }
   }, [areAssignmentsReady, isAnimationComplete, screenIndex]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const sessionIdFromUrl = params.get('checkout_session_id');
+
+    if (!sessionIdFromUrl) {
+      return;
+    }
+
+    const removeCheckoutParam = () => {
+      if (typeof window.history?.replaceState === 'function') {
+        params.delete('checkout_session_id');
+        const nextQuery = params.toString();
+        const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${
+          window.location.hash || ''
+        }`;
+        window.history.replaceState({}, document.title, nextUrl);
+      }
+    };
+
+    const persisted = readPersistedPaymentState();
+
+    if (
+      !persisted ||
+      persisted.sessionId !== sessionIdFromUrl ||
+      !persisted.notificationBatchId
+    ) {
+      setNotificationError(
+        'We confirmed your payment, but we could not match it to this draw. Please restart and try again.'
+      );
+      removeCheckoutParam();
+      return;
+    }
+
+    setEventData(persisted.eventData || createDefaultEvent());
+    setAssignments(Array.isArray(persisted.assignments) ? persisted.assignments : []);
+    setNotificationBatchId(persisted.notificationBatchId);
+    setAreAssignmentsReady(true);
+    setIsAnimationComplete(true);
+    setShowNotificationPrompt(false);
+    setScreenIndex(SCREENS.payment);
+    setCheckoutClientSecret('');
+    setCheckoutSessionId('');
+    setIsCreatingCheckoutSession(false);
+    setIsSendingNotifications(false);
+    setNotificationError('');
+    setCompletedCheckoutSessionId(sessionIdFromUrl);
+    setLastPaymentIntentId('');
+    setPendingSessionToResume(sessionIdFromUrl);
+    removeCheckoutParam();
+  }, []);
 
   const handleEventSubmit = async (payload) => {
     setEventData(payload);
@@ -85,6 +205,7 @@ export default function App() {
     setIsCreatingCheckoutSession(false);
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
+    clearPersistedPaymentState();
     try {
       const result = await createDraw(payload);
       setAssignments(result.assignments);
@@ -118,6 +239,7 @@ export default function App() {
     setIsCreatingCheckoutSession(false);
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
+    clearPersistedPaymentState();
   };
 
   const triggerNotificationSend = useCallback(
@@ -147,6 +269,7 @@ export default function App() {
         setNotificationBatchId(null);
         setCompletedCheckoutSessionId('');
         setLastPaymentIntentId(response?.paymentIntentId || paymentIntentId || '');
+        clearPersistedPaymentState();
       } catch (error) {
         console.error(error);
         const message = error.message || 'Unable to send notifications. Please try again.';
@@ -161,6 +284,15 @@ export default function App() {
     },
     [notificationBatchId]
   );
+
+  useEffect(() => {
+    if (!pendingSessionToResume || !notificationBatchId) {
+      return;
+    }
+
+    triggerNotificationSend(pendingSessionToResume, '');
+    setPendingSessionToResume('');
+  }, [notificationBatchId, pendingSessionToResume, triggerNotificationSend]);
 
   const handleNotificationConfirmed = async () => {
     if (!notificationBatchId) {
@@ -190,6 +322,12 @@ export default function App() {
       setLastPaymentIntentId('');
       setShowNotificationPrompt(false);
       setScreenIndex(SCREENS.payment);
+      persistPaymentState({
+        notificationBatchId,
+        eventData,
+        assignments,
+        sessionId: response.sessionId
+      });
       return true;
     } catch (error) {
       console.error(error);
@@ -215,6 +353,7 @@ export default function App() {
     setIsCreatingCheckoutSession(false);
     setCompletedCheckoutSessionId('');
     setLastPaymentIntentId('');
+    clearPersistedPaymentState();
   };
 
   const resetToDrawAfterPayment = (errorMessage = '') => {
@@ -227,6 +366,7 @@ export default function App() {
     setScreenIndex(SCREENS.draw);
     setShowNotificationPrompt(isAnimationComplete && areAssignmentsReady);
     setNotificationError(errorMessage);
+    clearPersistedPaymentState();
   };
 
   const handlePaymentCanceled = () => {

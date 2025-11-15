@@ -1,5 +1,5 @@
 import TermsContent from './TermsContent.jsx';
-import aiDoneRight from '../assets/AI-done-right.gif';
+import aiDoneRight from '../assets/ai-done-right.gif';
 
 const redirectHome = () => {
   window.location.href = '/';

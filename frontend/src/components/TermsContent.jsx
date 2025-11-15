@@ -1,58 +1,9 @@
 import { useMemo, useState } from 'react';
 
-const AI_DONE_RIGHT_CANDIDATES = [
-  '/assets/AI-done-right.gif',
-  '/src/assets/AI-done-right.gif',
-  'assets/AI-done-right.gif'
-];
-
-const FALLBACK_LABEL = 'AI Done Right badge';
-
 function TermsCelebration() {
-  const [imageSrcIndex, setImageSrcIndex] = useState(0);
-  const [shouldRenderFallback, setShouldRenderFallback] = useState(false);
-
-  const activeSrc = useMemo(
-    () => AI_DONE_RIGHT_CANDIDATES[imageSrcIndex] || '',
-    [imageSrcIndex]
-  );
-
-  const handleImageError = () => {
-    setImageSrcIndex((previousIndex) => {
-      const nextIndex = previousIndex + 1;
-
-      if (nextIndex >= AI_DONE_RIGHT_CANDIDATES.length) {
-        setShouldRenderFallback(true);
-        return previousIndex;
-      }
-
-      return nextIndex;
-    });
-  };
-
-  const handleImageLoad = () => {
-    if (shouldRenderFallback) {
-      setShouldRenderFallback(false);
-    }
-  };
-
-  if (shouldRenderFallback || !activeSrc) {
-    return (
-      <div className="terms-celebration" aria-label={FALLBACK_LABEL}>
-        <div className="terms-celebration__fallback">AI Done Right</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="terms-celebration">
-      <img
-        src={activeSrc}
-        alt={FALLBACK_LABEL}
-        loading="lazy"
-        onError={handleImageError}
-        onLoad={handleImageLoad}
-      />
+    <div className="terms-celebration" aria-label="AI Done Right badge">
+      <div className="terms-celebration__fallback">AI Done Right</div>
     </div>
   );
 }

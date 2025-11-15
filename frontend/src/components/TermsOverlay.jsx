@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import TermsContent from './TermsContent.jsx';
-import aiDoneRight from '../assets/AI-done-right.gif';
 
 export default function TermsOverlay({ isOpen, onClose }) {
   const closeButtonRef = useRef(null);
@@ -58,9 +57,6 @@ export default function TermsOverlay({ isOpen, onClose }) {
         </button>
         <div className="terms-scroll">
           <TermsContent />
-          <div className="terms-ai-done-right">
-            <img src={aiDoneRight} alt="AI Done Right" />
-          </div>
         </div>
         <div className="terms-actions">
           <button type="button" className="terms-button terms-button--primary" onClick={onClose}>

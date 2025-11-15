@@ -1,4 +1,5 @@
 import TermsContent from './TermsContent.jsx';
+import aiDoneRight from '../assets/AI-done-right.gif';
 
 const redirectHome = () => {
   window.location.href = '/';
@@ -17,6 +18,9 @@ export default function TermsPage() {
       <div className="terms-page__aurora" aria-hidden="true" />
       <div className="terms-page__card">
         <TermsContent />
+        <div className="terms-ai-done-right">
+          <img src={aiDoneRight} alt="AI Done Right" />
+        </div>
         <div className="terms-actions terms-actions--page">
           <button type="button" className="terms-button terms-button--secondary" onClick={closeWindow}>
             Close

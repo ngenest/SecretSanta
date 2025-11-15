@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 import path from 'path';
+import fs from 'fs';
 import { RecaptchaEnterpriseServiceClient } from '@google-cloud/recaptcha-enterprise';
 import { fileURLToPath } from 'url';
 import {
@@ -16,6 +17,33 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const EMAIL_LOGO_DATA_URI = (() => {
+  try {
+    const gifPath = path.resolve(__dirname, './assets/secret-santa-logo-animated.gif');
+    const buffer = fs.readFileSync(gifPath);
+    return `data:image/gif;base64,${buffer.toString('base64')}`;
+  } catch (error) {
+    console.warn('Unable to load animated email logo', error);
+    return '';
+  }
+})();
+
+const EMAIL_LOGO_BLOCK = EMAIL_LOGO_DATA_URI
+  ? `<div style="text-align:center;margin:0 0 20px;">
+        <img src="${EMAIL_LOGO_DATA_URI}" alt="Secret Santa animated logo" style="width:160px;height:auto;border-radius:20px;box-shadow:0 18px 36px rgba(18, 16, 48, 0.28);" />
+     </div>`
+  : '';
+
+const renderEmailTemplate = (content) => `
+  <div style="background:linear-gradient(160deg,#080d23 0%,#1a1640 55%,#0f1c3c 100%);padding:32px 16px;">
+    <div style="max-width:600px;margin:0 auto;background:rgba(255,255,255,0.94);border-radius:28px;padding:32px 36px;font-family: 'Nunito', Arial, sans-serif;color:#1f2438;box-shadow:0 28px 56px rgba(10, 14, 40, 0.35);">
+      ${EMAIL_LOGO_BLOCK}
+      ${content}
+      <p style="margin-top:28px;font-size:12px;color:#5b5e7a;text-align:center;">Sent with Secret Santa Magic 🎁</p>
+    </div>
+  </div>
+`;
 
 dotenv.config();
 
@@ -882,11 +910,17 @@ const sendEmails = async ({
 
   const promises = recipients.map(({ giver, receiver }) => {
     const acknowledgementUrl = ackLinks.get(giver.id);
+    const safeGiverName = escapeHtml(giver.name || 'Secret Santa friend');
+    const safeReceiverName = escapeHtml(receiver.name || 'your match');
+    const safeEventName = escapeHtml(eventName);
+    const safeEventDate = escapeHtml(eventDate);
+    const safeEventTypeLabel = escapeHtml(eventTypeLabel);
+    const safeAckLinkText = escapeHtml(acknowledgementUrl);
     const rulesHtml = secretSantaRules
       ? `
-          <div style="margin-top:18px;padding:16px;border-radius:12px;background:rgba(255,255,255,0.8);color:#4a148c;line-height:1.4;">
-            <h3 style="margin-top:0;color:#c2185b;">Secret Santa Rules</h3>
-            <p style="margin:0;">${formatRulesHtml(secretSantaRules)}</p>
+          <div style="margin-top:24px;padding:18px 20px;border-radius:18px;background:rgba(248,250,255,0.96);border:1px solid rgba(66,133,244,0.18);box-shadow:0 12px 24px rgba(20,24,56,0.14);">
+            <h3 style="margin:0 0 12px;color:#2d7ff9;font-size:18px;">Secret Santa Rules</h3>
+            <p style="margin:0;color:#344054;line-height:1.6;">${formatRulesHtml(secretSantaRules)}</p>
           </div>`
       : '';
     const rulesText = secretSantaRules
@@ -897,24 +931,23 @@ const sendEmails = async ({
       to: giver.email,
       subject: `Secret Santa Match for ${eventName}`,
       text: `Ho ho ho! You will be gifting ${receiver.name} for ${eventName} on ${eventDate}. Event type: ${eventTypeLabel}. Keep it secret!\n\nAt the present time, nobody else but you knows who you were matched with. Keep the magic alive, keep it a secret!\n\nYou need to click the following link to confirm that you have received and accept the result of your draw:\n${acknowledgementUrl}${rulesText}`,
-      html: `
-        <div style="font-family: Arial, sans-serif;">
-          <h2 style="color:#d32f2f;">Secret Santa Assignment</h2>
-          <p>Hi ${giver.name},</p>
-          <p>You drew <strong>${receiver.name}</strong> for <strong>${eventName}</strong> on <strong>${eventDate}</strong>.</p>
-          <p style="margin:8px 0;color:#c2185b;"><strong>Event type:</strong> ${eventTypeLabel}</p>
-          <p style="margin-top:16px;">At the present time, nobody else but you knows who you were matched with. Keep the magic alive, keep it a secret!</p>
-          <p style="margin-bottom:16px;">You need to click the following link to confirm that you have received and accept the result of your draw:</p>
-          <p style="text-align:center;">
-            <a href="${acknowledgementUrl}" style="background:#c2185b;color:#fff;padding:12px 18px;border-radius:6px;text-decoration:none;display:inline-block;">
-              Confirm Your Secret Santa Draw
+      html: renderEmailTemplate(`
+        <div style="line-height:1.65;">
+          <h2 style="margin:0 0 16px;font-size:24px;color:#c2185b;">Your Secret Santa match is here! 🎁</h2>
+          <p style="margin:0 0 12px;">Hi <strong>${safeGiverName}</strong>,</p>
+          <p style="margin:0 0 12px;">You're gifting <strong>${safeReceiverName}</strong> for <strong>${safeEventName}</strong> on <strong>${safeEventDate}</strong>.</p>
+          <p style="margin:0 0 16px;color:#6d1b7b;"><strong>Event type:</strong> ${safeEventTypeLabel}</p>
+          <p style="margin:16px 0 20px;">Keep the magic alive and your match a secret!</p>
+          <div style="text-align:center;margin:20px 0;">
+            <a href="${acknowledgementUrl}" style="display:inline-block;padding:14px 28px;background:linear-gradient(120deg,#ff5f6d,#f9a826);color:#fff;font-weight:700;text-decoration:none;border-radius:999px;box-shadow:0 16px 26px rgba(255,95,109,0.35);">
+              Confirm your Secret Santa draw
             </a>
-          </p>
-          <p style="font-size:12px;color:#555;">If the button does not work, copy and paste this link into your browser: <br/><a href="${acknowledgementUrl}">${acknowledgementUrl}</a></p>
-          <p>Get something merry and bright!</p>
+          </div>
+          <p style="margin:12px 0 0;font-size:13px;color:#4a4f6c;">If the button doesn't work, copy and paste this link:<br/><a href="${acknowledgementUrl}" style="color:#2d89ff;word-break:break-all;">${safeAckLinkText}</a></p>
+          <p style="margin:20px 0 0;">Get something merry and bright!</p>
           ${rulesHtml}
         </div>
-      `
+      `)
     };
 
     return mailTransport.sendMail(message);
@@ -977,21 +1010,23 @@ const sendOrganizerEmailNotification = async ({
     to: email,
     subject: `Participant confirmation for ${eventName}`,
     text: `Hello ${organizerName},\n${participant.name} (${formattedContacts}) confirmed their Secret Santa match for ${eventName}.\nDraw date: ${formatDateTime(drawDate)}\nGift exchange: ${formatDateOnly(eventDate)}\nEvent type: ${eventTypeLabel}\n`,
-    html: `
-      <div style="font-family: Arial, sans-serif; color:#1f2933;">
-        <h2 style="color:#c2185b;">Secret Santa Confirmation</h2>
-        <p>Hello ${escapeHtml(organizerName)},</p>
-        <p><strong>${escapeHtml(participant.name)}</strong> (${escapeHtml(
-          formattedContacts
-        )}) confirmed their Secret Santa match for <strong>${escapeHtml(eventName)}</strong>.</p>
-        <ul style="padding-left:1.25rem; line-height:1.6;">
-          <li><strong>Draw date:</strong> ${escapeHtml(formatDateTime(drawDate))}</li>
-          <li><strong>Gift exchange:</strong> ${escapeHtml(formatDateOnly(eventDate))}</li>
-          <li><strong>Event type:</strong> ${escapeHtml(eventTypeLabel)}</li>
-        </ul>
-        <p style="margin-top:16px;">Keep the festive spirit alive and reach out if anything needs your attention.</p>
+    html: renderEmailTemplate(`
+      <div style="line-height:1.65;">
+        <h2 style="margin:0 0 16px;color:#c2185b;">Participant confirmation 🎉</h2>
+        <p style="margin:0 0 12px;">Hello ${escapeHtml(organizerName)},</p>
+        <p style="margin:0 0 12px;">
+          <strong>${escapeHtml(participant.name)}</strong>
+          (${escapeHtml(formattedContacts)}) confirmed their Secret Santa match for
+          <strong>${escapeHtml(eventName)}</strong>.
+        </p>
+        <div style="margin:18px 0;padding:18px 20px;border-radius:18px;background:rgba(248,250,255,0.96);border:1px solid rgba(66,133,244,0.18);">
+          <p style="margin:0 0 8px;color:#33415c;"><strong>Draw date:</strong> ${escapeHtml(formatDateTime(drawDate))}</p>
+          <p style="margin:0 0 8px;color:#33415c;"><strong>Gift exchange:</strong> ${escapeHtml(formatDateOnly(eventDate))}</p>
+          <p style="margin:0;color:#33415c;"><strong>Event type:</strong> ${escapeHtml(eventTypeLabel)}</p>
+        </div>
+        <p style="margin:16px 0 0;">Keep the festive spirit alive and reach out if anything needs your attention.</p>
       </div>
-    `
+    `)
   };
 
   await mailTransport.sendMail(message);
@@ -1049,17 +1084,19 @@ const sendOrganizerPaymentReceipt = async ({
 
   const text = `Hi ${organizerName},\n\nThank you for organizing ${displayEventName} with Secret Santa Draws and for trusting our services.\n\nWe received your payment of ${formattedAmount}.\nPayment reference: ${paymentIntentId}\n\nParticipant notifications are now on their way.\n\nHappy gifting!\nThe Secret Santa Draws Team`;
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; color:#1f2937;">
-      <h2 style="color:#b71c1c; margin-top:0;">Payment received</h2>
-      <p>Hi ${escapeHtml(organizerName)},</p>
-      <p>Thank you for organizing <strong>${escapeHtml(displayEventName)}</strong> with Secret Santa Draws and for trusting our services.</p>
-      <p style="margin:16px 0;">We received your payment of <strong>${escapeHtml(formattedAmount)}</strong>.</p>
-      <p style="margin:12px 0;">Payment reference: <strong>${escapeHtml(paymentIntentId || 'N/A')}</strong></p>
-      <p style="margin-top:16px;">We&apos;re now notifying every participant with their assignments. Keep the holiday spirit glowing!</p>
-      <p style="margin-top:24px;">With gratitude,<br/>The Secret Santa Draws Team</p>
+  const html = renderEmailTemplate(`
+    <div style="line-height:1.65;">
+      <h2 style="margin:0 0 16px;color:#b71c1c;">Payment received</h2>
+      <p style="margin:0 0 12px;">Hi ${escapeHtml(organizerName)},</p>
+      <p style="margin:0 0 12px;">Thank you for organizing <strong>${escapeHtml(displayEventName)}</strong> with Secret Santa Draws and for trusting our services.</p>
+      <div style="margin:20px 0;padding:18px 20px;border-radius:18px;background:rgba(248,250,255,0.96);border:1px solid rgba(255,105,135,0.2);box-shadow:0 14px 28px rgba(20,24,56,0.14);">
+        <p style="margin:0 0 8px;color:#334155;"><strong>Amount received:</strong> ${escapeHtml(formattedAmount)}</p>
+        <p style="margin:0;color:#334155;"><strong>Payment reference:</strong> ${escapeHtml(paymentIntentId || 'N/A')}</p>
+      </div>
+      <p style="margin:16px 0 0;">We&apos;re now notifying every participant with their assignments. Keep the holiday spirit glowing!</p>
+      <p style="margin:24px 0 0;">With gratitude,<br/>The Secret Santa Draws Team</p>
     </div>
-  `;
+  `);
 
   const message = {
     from: process.env.FROM_EMAIL || 'secretsanta@example.com',

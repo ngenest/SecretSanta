@@ -20,6 +20,11 @@ backend/dist/
 *.log
 npm-debug.log*
 
+# Generated assets
+frontend/public/assets/*.gif
+frontend/src/assets/*.gif
+backend/src/assets/*.gif
+
 # OS files
 .DS_Store
 Thumbs.db

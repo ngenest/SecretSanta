@@ -73,6 +73,16 @@ export default function AcknowledgementLanding() {
   const [ackData, setAckData] = useState(null);
   const [error, setError] = useState('');
 
+  const rulesLines = useMemo(() => {
+    if (!ackData?.secretSantaRules) {
+      return [];
+    }
+    return ackData.secretSantaRules
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }, [ackData?.secretSantaRules]);
+
   const payload = useMemo(() => {
     const search = new URLSearchParams(window.location.search);
     return search.get('payload');
@@ -209,14 +219,6 @@ export default function AcknowledgementLanding() {
   const receiverPhoneDial = receiverPhone ? receiverPhone.replace(/[^+\d]/g, '') : '';
   const receiverContactProvided = Boolean(receiverEmail || receiverPhone);
   const acknowledgementLink = safeText(ackData.acknowledgementUrl);
-  const rulesLines = useMemo(
-    () =>
-      (ackData.secretSantaRules || '')
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean),
-    [ackData.secretSantaRules]
-  );
 
   return (
     <div className="ack-landing success-state">

@@ -136,6 +136,8 @@ export default function AcknowledgementLanding() {
     window.location.href = '/';
   };
 
+  const hasAckData = ackData && typeof ackData === 'object';
+
   if (status === 'loading') {
     return (
       <div className="ack-landing loading-state">
@@ -171,7 +173,18 @@ export default function AcknowledgementLanding() {
     );
   }
 
-  if (!ackData) {
+  if (status === 'success' && !hasAckData) {
+    return (
+      <div className="ack-landing invalid-state">
+        <div className="invalid-content">
+          <h1>We couldn&apos;t load your confirmation</h1>
+          <p>Please refresh the page or request a new acknowledgement email.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasAckData) {
     return null;
   }
 

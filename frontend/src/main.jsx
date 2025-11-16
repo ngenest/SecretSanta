@@ -4,6 +4,15 @@ import App from './App.jsx';
 import AcknowledgementLanding from './components/AcknowledgementLanding.jsx';
 import TermsPage from './components/TermsPage.jsx';
 import './styles.css';
+import favicon from './assets/favicon.ico';
+
+const setFavicon = () => {
+  const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
+  link.rel = 'icon';
+  link.type = 'image/x-icon';
+  link.href = favicon;
+  document.head.appendChild(link);
+};
 
 const isAcknowledgementRoute = () => {
   try {
@@ -30,4 +39,7 @@ if (isAcknowledgementRoute()) {
 } else if (isTermsRoute()) {
   rootComponent = <TermsPage />;
 }
+
+setFavicon();
+
 ReactDOM.createRoot(document.getElementById('root')).render(rootComponent);

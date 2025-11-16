@@ -2089,7 +2089,6 @@ textarea {
 .checkout-card__body--fallback,
 .checkout-card__body--complete {
   text-align: center;
-  align-items: center;
 }
 
 .checkout-card__error {
@@ -2256,10 +2255,11 @@ textarea {
 }
 
 .footer-logo {
-  width: 44px;
   height: 44px;
-  border-radius: 50%;
-  z-index: 1;
+  width: auto;
+  display: block;
+  object-fit: contain;
+  border-radius: 0;
   box-shadow: 0 10px 25px rgba(45, 140, 255, 0.45);
 }
 

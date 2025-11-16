@@ -110,17 +110,11 @@ body::after {
   0% {
     transform: translateX(0);
   }
-  20% {
-    transform: translateX(calc(var(--gust-amplitude, 18px) * 0.35));
-  }
-  45% {
-    transform: translateX(calc(var(--gust-amplitude, 18px) * -0.25));
+  40% {
+    transform: translateX(calc(var(--gust-amplitude, 12px)));
   }
   70% {
-    transform: translateX(calc(var(--gust-amplitude, 18px)));
-  }
-  85% {
-    transform: translateX(calc(var(--gust-amplitude, 18px) * -0.15));
+    transform: translateX(calc(var(--gust-amplitude, 12px) * -0.4));
   }
   100% {
     transform: translateX(0);

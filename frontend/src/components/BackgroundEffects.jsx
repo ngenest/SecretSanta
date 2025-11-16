@@ -1,32 +1,40 @@
 import { useMemo } from 'react';
 
-const NEAR_FLAKES = 35;
-const FAR_FLAKES = 35;
+const NEAR_FLAKES = 70;
+const FAR_FLAKES = 80;
 
-const createFlake = (index, layer) => {
-  const gusty = Math.random() > 0.6;
-  const baseSize = layer === 'near' ? 3 : 2;
-  const sizeVariance = layer === 'near' ? 3.5 : 2.5;
+const wrapPercentage = (value) => {
+  const bounded = value % 100;
+  return `${bounded < 0 ? bounded + 100 : bounded}%`;
+};
+
+const createFlake = (index, layer, total) => {
+  const baseSize = layer === 'near' ? 2.6 : 1.6;
+  const sizeStep = layer === 'near' ? 0.28 : 0.22;
+  const spreadOffset = layer === 'near' ? 3 : 1.5;
+  const depthFactor = layer === 'near' ? 1 : 0.78;
+  const modulation = (index % 9) / 9;
+  const horizontalBand = ((index % 5) - 2) * spreadOffset;
 
   return {
     id: `${layer}-${index}`,
     layer,
-    left: `${Math.random() * 100}%`,
-    fallDuration: 16 + Math.random() * 16,
-    fallDelay: -Math.random() * 20,
-    size: baseSize + Math.random() * sizeVariance,
-    opacity: layer === 'near' ? 0.55 + Math.random() * 0.35 : 0.35 + Math.random() * 0.35,
-    blur: layer === 'near' ? Math.random() * 0.6 : 0.6 + Math.random() * 1.2,
-    gustDuration: gusty ? 5 + Math.random() * 6 : 7 + Math.random() * 4,
-    gustDelay: Math.random() * 6,
-    gustAmplitude: gusty ? (Math.random() > 0.5 ? 1 : -1) * (16 + Math.random() * 28) : (Math.random() > 0.5 ? 1 : -1) * (8 + Math.random() * 12)
+    left: wrapPercentage((index / total) * 100 + horizontalBand),
+    fallDuration: (layer === 'near' ? 14 : 18) + (index % 6) * 0.55,
+    fallDelay: -((index % 18) * 0.45),
+    size: baseSize + modulation * sizeStep * 8,
+    opacity: layer === 'near' ? 0.5 + modulation * 0.35 : 0.35 + modulation * 0.3,
+    blur: layer === 'near' ? 0.25 + modulation * 0.5 : 0.5 + modulation * 0.85,
+    gustDuration: 10 + (index % 5) * 1.15,
+    gustDelay: (index % 7) * 0.65,
+    gustAmplitude: ((index % 5) - 2) * (layer === 'near' ? 3.2 : 2.1) * depthFactor
   };
 };
 
 export default function BackgroundEffects() {
   const snowflakes = useMemo(() => {
-    const near = Array.from({ length: NEAR_FLAKES }, (_, idx) => createFlake(idx, 'near'));
-    const far = Array.from({ length: FAR_FLAKES }, (_, idx) => createFlake(idx, 'far'));
+    const near = Array.from({ length: NEAR_FLAKES }, (_, idx) => createFlake(idx, 'near', NEAR_FLAKES));
+    const far = Array.from({ length: FAR_FLAKES }, (_, idx) => createFlake(idx, 'far', FAR_FLAKES));
     return [...near, ...far];
   }, []);
 

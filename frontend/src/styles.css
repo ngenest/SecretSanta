@@ -52,6 +52,13 @@ body::after {
   z-index: 1;
 }
 
+.app-main {
+  width: min(1100px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
 .background-effects {
   position: fixed;
   inset: 0;
@@ -150,6 +157,7 @@ body::after {
   -webkit-background-clip: text;
   color: transparent;
   text-shadow: 0 0 16px rgba(255, 209, 102, 0.35);
+  margin: 0;
 }
 
 .gift-logo {
@@ -2621,6 +2629,88 @@ textarea {
   padding: clamp(1.5rem, 3vw, 2.5rem);
   overflow: hidden;
   backdrop-filter: blur(18px);
+}
+
+.seo-section {
+  width: 100%;
+  background: rgba(9, 13, 35, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 26px;
+  box-shadow: 0 28px 58px rgba(5, 9, 30, 0.4);
+  overflow: hidden;
+}
+
+.seo-section__content {
+  padding: clamp(1.5rem, 3vw, 2.35rem);
+  display: grid;
+  gap: 1.25rem;
+  color: rgba(245, 247, 255, 0.9);
+}
+
+.seo-section h2,
+.seo-section h3 {
+  margin: 0;
+  font-family: 'Fredoka One', 'Nunito', system-ui;
+  letter-spacing: 0.06em;
+}
+
+.seo-section h2 {
+  font-size: clamp(1.75rem, 3.5vw, 2.1rem);
+  color: #ffd166;
+  text-shadow: 0 16px 30px rgba(5, 9, 30, 0.55);
+}
+
+.seo-section h3 {
+  font-size: clamp(1.15rem, 2.6vw, 1.35rem);
+  color: #c5e5ff;
+}
+
+.seo-section__lede {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.seo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.seo-card {
+  padding: 1.1rem 1.15rem;
+  border-radius: 18px;
+  background: rgba(12, 18, 44, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 34px rgba(5, 9, 30, 0.4);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.seo-card p {
+  margin: 0;
+  line-height: 1.6;
+  color: rgba(245, 247, 255, 0.85);
+}
+
+.seo-cta {
+  padding: 1.15rem 1.25rem;
+  border-radius: 18px;
+  background: linear-gradient(120deg, rgba(45, 140, 255, 0.18), rgba(239, 71, 111, 0.16));
+  border: 1px solid rgba(120, 195, 255, 0.25);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.seo-cta ul {
+  margin: 0.75rem 0 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.seo-cta li {
+  line-height: 1.55;
+  color: rgba(245, 247, 255, 0.88);
 }
 
 @keyframes auroraSweep {

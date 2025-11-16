@@ -5,7 +5,7 @@ export default function Header() {
     <header className="app-header">
       <div className="logo">
         <GiftLogo />
-        <span className="logo-text">Secret Santa Magic</span>
+        <h1 className="logo-text">Secret Santa Magic</h1>
       </div>
     </header>
   );
